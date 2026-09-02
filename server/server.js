@@ -891,14 +891,11 @@ app.delete('/api/admin/quotes/:symbol', auth, (req, res) => {
 // 实时刷新加密币价格（CoinGecko 免费 API，无需 key）
 app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto' AND api_id IS NOT NULL AND api_id != ''").all();
-    const ids = rows.map(r => r.api_id).join(',');
-    if (!ids) return res.json({ ok: true, updated: 0 });
-    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(15000) });
-    const j = await resp.json();
+    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
+    const prices = await fetchCryptoPrices(rows);
     let updated = 0;
     for (const r of rows) {
-      const p = j[r.api_id] && j[r.api_id].usd;
+      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')];
       if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
     }
     res.json({ ok: true, updated });
@@ -910,15 +907,47 @@ app.get('/api/public/quotes/history', (req, res) => {
   const rows = db.prepare('SELECT price, ts FROM price_history WHERE symbol = ? ORDER BY id DESC LIMIT 60').all(symbol);
   res.json(rows.reverse());
 });
+
+async function fetchCryptoPrices(rows) {
+  const out = {};
+  const bn = [];
+  for (const r of rows) {
+    const sym = String(r.symbol || '').replace(/\//g, '');
+    if (sym) bn.push(sym);
+  }
+  // Binance multi-symbol ticker
+  try {
+    const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(bn));
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const j = await resp.json();
+    if (Array.isArray(j)) {
+      for (const item of j) {
+        const sym = String(item.symbol || '').replace('USDT', '/USDT');
+        if (item.price) out[sym] = Number(item.price);
+      }
+      return out;
+    }
+  } catch (e) {}
+  // CoinGecko fallback by api_id
+  try {
+    const ids = rows.map(r => r.api_id).filter(Boolean).join(',');
+    if (!ids) return out;
+    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(10000) });
+    const j = await resp.json();
+    for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) out[r.symbol] = p; }
+  } catch (e) {}
+  return out;
+}
+
 // 定时：加密币 5 分钟刷新一次
 setInterval(async () => {
   try {
-    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto' AND api_id IS NOT NULL AND api_id != ''").all();
-    const ids = rows.map(r => r.api_id).join(',');
-    if (!ids) return;
-    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(12000) });
-    const j = await resp.json();
-    for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); } }
+    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
+    const prices = await fetchCryptoPrices(rows);
+    for (const r of rows) {
+      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')];
+      if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); }
+    }
   } catch (e) {}
 }, 300000);
 
