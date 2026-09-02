@@ -39,6 +39,8 @@ export function initDb() {
       kyc_status TEXT DEFAULT 'unverified',
       is_verified INTEGER DEFAULT 0,
       avatar TEXT DEFAULT '',
+      frozen_balance REAL DEFAULT 0,
+      user_level TEXT DEFAULT 'L0',
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS rooms (
@@ -164,7 +166,8 @@ export function initDb() {
       price REAL DEFAULT 0,
       ask_price REAL DEFAULT 0,
       change_percent REAL DEFAULT 0,
-      category TEXT DEFAULT 'precious'
+      category TEXT DEFAULT 'precious',
+      api_id TEXT
     );
     CREATE TABLE IF NOT EXISTS investments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,10 +229,47 @@ export function initDb() {
       source TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
+    CREATE TABLE IF NOT EXISTS platform_pool (
+      id INTEGER PRIMARY KEY,
+      balance REAL DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
     CREATE TABLE IF NOT EXISTS fund_pool (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       amount REAL DEFAULT 0,
       note TEXT,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS price_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      symbol TEXT,
+      price REAL,
+      ts TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS invite_rewards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_uid TEXT,
+      referred_uid TEXT,
+      referred_name TEXT,
+      amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'frozen',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      unlocked_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS fund_pool (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      balance REAL DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS team_rewards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT,
+      user_name TEXT,
+      level TEXT,
+      kind TEXT,
+      amount REAL DEFAULT 0,
+      source TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS commission_rates (
@@ -246,6 +286,15 @@ export function initDb() {
   try { db.exec("ALTER TABLE rooms ADD COLUMN customer_share REAL DEFAULT 50"); } catch (e) {}
   try { db.exec("ALTER TABLE rooms ADD COLUMN fund_share REAL DEFAULT 40"); } catch (e) {}
   try { db.exec("ALTER TABLE rooms ADD COLUMN leader_earnings REAL DEFAULT 0"); } catch (e) {}
+
+  try { db.exec("ALTER TABLE users ADD COLUMN frozen_balance REAL DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN user_level TEXT DEFAULT 'L0'"); } catch (e) {}
+  try { db.exec("ALTER TABLE follows ADD COLUMN stop_loss REAL DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE follows ADD COLUMN stop_triggered INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE follows ADD COLUMN equity REAL DEFAULT 0"); } catch (e) {}
+  try { db.exec("ALTER TABLE follows ADD COLUMN ended_at TEXT"); } catch (e) {}
+  try { db.exec("INSERT INTO platform_pool (id, balance) SELECT 1, 0 WHERE NOT EXISTS (SELECT 1 FROM platform_pool WHERE id = 1)"); } catch (e) {}
+  try { db.exec("ALTER TABLE quotes ADD COLUMN api_id TEXT"); } catch (e) {}
   // ensure users.avatar column exists (existing DBs)
   try { db.exec("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''"); } catch (e) { /* already exists */ }
 
@@ -360,6 +409,8 @@ function seedQuotes() {
     ['USOIL','WTI原油',80.25,80.30,-0.62,'oil'],
   ];
   qs.forEach(q => ins.run(...q));
+  const apiSt = db.prepare("UPDATE quotes SET api_id = ? WHERE symbol = ?");
+  apiSt.run('bitcoin', 'BTC/USDT'); apiSt.run('ethereum', 'ETH/USDT'); apiSt.run('solana', 'SOL/USDT');
 }
 
 function seedCommissions() {
