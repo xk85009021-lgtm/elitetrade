@@ -6,9 +6,13 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { db, initDb } from './db.js';
+import QRCode from 'qrcode';
+import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
+const UPLOAD_DIR = path.join(ROOT, 'uploads');
+try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch (e) {}
 const JWT_SECRET = process.env.JWT_SECRET || 'elitetrade-admin-secret-change-me-2026';
 const PORT = process.env.PORT || 8787;
 
@@ -127,8 +131,8 @@ app.get('/api/users', auth, (req, res) => {
 app.post('/api/users', auth, (req, res) => {
   const b = req.body || {};
   const uid = b.uid || ('10' + String(Math.floor(Math.random() * 900000) + 100000));
-  db.prepare(`INSERT INTO users (uid,name,phone,email,balance,total_assets,available,total_income,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(uid, b.name || '', b.phone || '', b.email || '', Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, Number(b.level)||1, b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
+  db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,total_assets,available,total_income,frozen_balance,user_level,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(uid, b.name || '', b.phone || '', b.email || '', String(b.password || ''), Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'L0', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, b.userLevel === 'L0' ? 0 : Number(b.level)||1, b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
   res.json({ ok: true });
 });
 
@@ -137,8 +141,8 @@ app.put('/api/users/:id', auth, (req, res) => {
   const b = req.body || {};
   const cur = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!cur) return res.status(404).json({ error: '用户不存在' });
-  db.prepare(`UPDATE users SET name=?, phone=?, email=?, balance=?, total_assets=?, available=?, total_income=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
-    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.level ?? cur.level, id);
+  db.prepare(`UPDATE users SET name=?, phone=?, email=?, password=?, balance=?, total_assets=?, available=?, total_income=?, frozen_balance=?, user_level=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
+    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, b.password !== undefined ? String(b.password) : cur.password, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? (b.userLevel === 'L0' ? 0 : b.userLevel === 'L1' ? 1 : b.userLevel === 'L2' ? 2 : 3) : cur.level, id);
   res.json({ ok: true });
 });
 
@@ -252,7 +256,13 @@ app.put('/api/kyc/:id/review', auth, (req, res) => {
   const newStatus = action === 'approve' ? 'verified' : 'rejected';
   db.prepare(`UPDATE kyc SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?`).run(newStatus, req.admin.username, now(), k.id);
   db.prepare(`UPDATE users SET kyc_status=?, is_verified=? WHERE id=?`).run(newStatus === 'verified' ? 'verified' : 'rejected', newStatus === 'verified' ? 1 : 0, k.user_id);
-  res.json({ ok: true });
+  let inviteInfo = null;
+  if (action === 'approve') {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(k.user_id);
+    inviteInfo = grantInviteReward(user);
+    if (user) refreshUserLevel(user.referrer_id);
+  }
+  res.json({ ok: true, inviteReward: inviteInfo ? { amount: inviteInfo.amount, referrer: inviteInfo.referrer.uid } : null });
 });
 
 // ---------- commissions (推广收益) ----------
@@ -391,14 +401,19 @@ app.post('/api/public/follow', (req, res) => {
   const uid = String(b.uid || '');
   const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
   if (!user) return res.status(404).json({ error: '请先登录' });
+  if ((user.kyc_status || '') !== 'verified') return res.status(403).json({ error: '请先完成实名认证（KYC）后再开启跟单' });
   const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(String(b.roomId || ''));
   if (!room) return res.status(404).json({ error: '房间不存在' });
   const allocated = Number(b.amount) || 0;
+  const stopLoss = Math.max(0, Math.min(99, Number(b.stopLoss) || 0));
   if (allocated > (user.available || 0)) return res.status(400).json({ error: '可用资金不足' });
   db.prepare('UPDATE users SET available = available - ?, total_assets = total_assets - ? WHERE id = ?').run(allocated, allocated, user.id);
   db.prepare('UPDATE rooms SET followers_count = followers_count + 1 WHERE id = ?').run(room.id);
-  const st = db.prepare('INSERT INTO follows (uid, user_id, room_id, room_name, avatar, allocated, status, created_at) VALUES (?,?,?,?,?,?,?,?)');
-  st.run(uid, user.id, room.id, room.name, room.avatar, allocated, 'active', new Date().toISOString());
+  const st = db.prepare('INSERT INTO follows (uid, user_id, room_id, room_name, avatar, allocated, status, stop_loss, equity, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  st.run(uid, user.id, room.id, room.name, room.avatar, allocated, 'active', stopLoss, allocated, new Date().toISOString());
+  // 被邀请用户参与跟单 → 解冻推荐人邀请奖励进可用余额
+  unlockInviteRewards(user);
+  refreshUserLevel(user.id);
   res.json({ ok: true });
 });
 
@@ -406,7 +421,7 @@ app.get('/api/public/follows', (req, res) => {
   const uid = String(req.query.uid || '');
   if (!uid) return res.json([]);
   const rows = db.prepare('SELECT * FROM follows WHERE uid = ? ORDER BY id DESC').all(uid);
-  res.json(rows.map(f => ({ id: f.id, roomId: f.room_id, roomName: f.room_name, avatar: f.avatar, allocated: f.allocated, status: f.status, createdAt: f.created_at, currentPnL: Math.round((f.allocated || 0) * 0.124) })));
+  res.json(rows.map(f => ({ id: f.id, roomId: f.room_id, roomName: f.room_name, avatar: f.avatar, allocated: f.allocated, status: f.status, stopLoss: f.stop_loss, stopTriggered: !!f.stop_triggered, equity: f.equity || f.allocated, createdAt: f.created_at, currentPnL: Math.round(((f.equity || f.allocated) - (f.allocated || 0)) * 100) / 100 })));
 });
 
 app.put('/api/public/follows/:id/pause', (req, res) => {
@@ -415,6 +430,28 @@ app.put('/api/public/follows/:id/pause', (req, res) => {
   const next = f.status === 'paused' ? 'active' : 'paused';
   db.prepare('UPDATE follows SET status = ? WHERE id = ?').run(next, f.id);
   res.json({ ok: true, status: next });
+});
+
+// 止损：确认结束跟单（剩余权益退回可用余额）
+app.put('/api/public/follows/:id/stop', (req, res) => {
+  const f = db.prepare('SELECT * FROM follows WHERE id = ?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: '记录不存在' });
+  if (f.status !== 'active') return res.status(400).json({ error: '该跟单已结束' });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(f.user_id);
+  const refund = Number((f.equity || f.allocated).toFixed(4));
+  if (user && refund > 0) {
+    db.prepare('UPDATE users SET available = available + ?, balance = balance + ?, total_assets = total_assets + ? WHERE id = ?').run(refund, refund, refund, user.id);
+  }
+  db.prepare("UPDATE follows SET status='ended', stop_triggered=0, ended_at=datetime('now','localtime') WHERE id=?").run(f.id);
+  res.json({ ok: true, refund });
+});
+
+// 止损：取消（继续跟单分红）
+app.put('/api/public/follows/:id/continue', (req, res) => {
+  const f = db.prepare('SELECT * FROM follows WHERE id = ?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: '记录不存在' });
+  db.prepare('UPDATE follows SET stop_triggered = 0 WHERE id = ?').run(f.id);
+  res.json({ ok: true });
 });
 
 
@@ -431,8 +468,20 @@ app.get('/api/public/referral', (req, res) => {
   const team = db.prepare('SELECT COUNT(*) c FROM users WHERE referrer_id = ?').get(user.id).c;
   const commissions = db.prepare('SELECT * FROM commissions WHERE user_id = ? ORDER BY id DESC LIMIT 20').all(user.id);
   const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id = ?').get(user.id).s;
+  const metrics = computeMetrics(user.id);
+  const frozen = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM invite_rewards WHERE referrer_uid=? AND status='frozen'").get(user.uid).s;
+  const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid = ? ORDER BY id DESC LIMIT 50').all(user.uid);
+  const teamRewards = db.prepare('SELECT * FROM team_rewards WHERE uid = ? ORDER BY id DESC LIMIT 50').all(user.uid);
+  const levelInfo = LEVEL_RULES[metrics.level];
   res.json({
     code: user.referral_code,
+    userLevel: metrics.level,
+    levelRule: levelInfo,
+    directVerified: metrics.directVerified,
+    teamVolume: metrics.volume,
+    frozenInviteRewards: frozen,
+    inviteRewards: inviteRewards.map(i => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })),
+    teamRewards: teamRewards.map(t => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })),
     teamSize: team,
     totalCommission,
     rates: rates.map(r => ({ level: r.level, rate: r.rate })),
@@ -466,6 +515,8 @@ app.get('/api/public/overview', (req, res) => {
     stats: {
       totalAssets: user.total_assets,
       balance: user.balance,
+      frozenBalance: user.frozen_balance || 0,
+      userLevel: user.user_level || 'L0',
       available: user.available,
       totalIncome: user.total_income,
       myCopyAlloc,
@@ -506,15 +557,98 @@ app.post('/api/public/invest', (req, res) => {
 });
 
 
+// ================= 等级体系 / 团队 =================
+const LEVEL_RULES = {
+  L0: { directRate: 0.05, teamRate: 0, needDirect: 0, needVolume: 0 },
+  L1: { directRate: 0.10, teamRate: 0.02, needDirect: 10, needVolume: 10000 },
+  L2: { directRate: 0.20, teamRate: 0.04, needDirect: 20, needVolume: 100000 },
+  L3: { directRate: 0.30, teamRate: 0.06, needDirect: 30, needVolume: 1000000 },
+};
+
+function getDescendants(userId) {
+  const res = [];
+  const stack = db.prepare('SELECT id FROM users WHERE referrer_id = ?').all(userId).map(r => r.id);
+  while (stack.length) {
+    const cur = stack.pop();
+    res.push(cur);
+    const kids = db.prepare('SELECT id FROM users WHERE referrer_id = ?').all(cur).map(r => r.id);
+    for (const k of kids) stack.push(k);
+  }
+  return res;
+}
+
+function getDirectIds(userId) {
+  return db.prepare('SELECT id FROM users WHERE referrer_id = ?').all(userId).map(r => r.id);
+}
+
+function computeMetrics(userId) {
+  const directVerified = db.prepare("SELECT COUNT(*) c FROM users WHERE referrer_id=? AND kyc_status='verified'").get(userId).c;
+  const directIds = getDirectIds(userId);
+  const desc = getDescendants(userId);
+  let volume = 0;
+  if (desc.length) {
+    const marks = desc.map(() => '?').join(',');
+    volume = db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...desc).s || 0;
+  }
+  let level = 'L0';
+  if (directVerified >= 30 && volume >= 1000000) level = 'L3';
+  else if (directVerified >= 20 && volume >= 100000) level = 'L2';
+  else if (directVerified >= 10 && volume >= 10000) level = 'L1';
+  return { level, directVerified, volume, directIds, desc };
+}
+
+function refreshUserLevel(userId) {
+  const m = computeMetrics(userId);
+  db.prepare('UPDATE users SET user_level = ? WHERE id = ?').run(m.level, userId);
+  return m;
+}
+
+function addAvailable(userId, amt) {
+  if (amt > 0) db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ? WHERE id = ?').run(amt, amt, amt, userId);
+}
+
+// ================= 直推邀请奖励（注册实名 → 冻结钱包）=================
+function grantInviteReward(referredUser) {
+  if (!referredUser || !referredUser.referrer_id) return null;
+  const ref = db.prepare('SELECT * FROM users WHERE id = ?').get(referredUser.referrer_id);
+  if (!ref) return null;
+  const count = db.prepare("SELECT COUNT(*) c FROM users WHERE referrer_id=? AND kyc_status='verified'").get(ref.id).c;
+  const amount = count >= 30 ? 10 : count >= 10 ? 3 : 1;
+  db.prepare('UPDATE users SET frozen_balance = frozen_balance + ? WHERE id = ?').run(amount, ref.id);
+  const info = db.prepare('INSERT INTO invite_rewards (referrer_uid, referred_uid, referred_name, amount, status) VALUES (?,?,?,?,?)')
+    .run(ref.uid, referredUser.uid, referredUser.name, amount, 'frozen');
+  return { referrer: ref, amount, id: info.lastInsertRowid };
+}
+
+// 被邀请用户首次跟单 → 解冻邀请奖励进可用余额
+function unlockInviteRewards(referredUser) {
+  if (!referredUser || !referredUser.referrer_id) return 0;
+  const rows = db.prepare("SELECT * FROM invite_rewards WHERE referred_uid=? AND status='frozen'").all(referredUser.uid);
+  let total = 0;
+  for (const row of rows) {
+    db.prepare("UPDATE invite_rewards SET status='unlocked', unlocked_at=datetime('now','localtime') WHERE id=?").run(row.id);
+    total += row.amount;
+  }
+  if (total > 0) {
+    const ref = db.prepare('SELECT * FROM users WHERE id = ?').get(referredUser.referrer_id);
+    if (ref) {
+      db.prepare('UPDATE users SET frozen_balance = frozen_balance - ?, available = available + ?, balance = balance + ? WHERE id = ?').run(total, total, total, ref.id);
+    }
+  }
+  return total;
+}
+
 // ================= 日化收益结算引擎 =================
 function randBetween(min, max) { return Number((min + Math.random() * (max - min)).toFixed(4)); }
 
 function settleDaily(req) {
   const today = new Date().toISOString().slice(0, 10);
+  const force = !!(req && req.query && req.query.force);
   const done = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE settle_date = ?').get(today).c;
-  if (done > 0 && !req?.query?.force) return { skipped: true, count: 0, reason: '今天已结算' };
+  if (done > 0 && !force) return { skipped: true, count: 0, reason: '今天已结算' };
   const follows = db.prepare("SELECT * FROM follows WHERE status = 'active'").all();
   let count = 0;
+  const profitByUid = {};
   for (const f of follows) {
     const already = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE follow_id = ? AND settle_date = ?').get(f.id, today).c;
     if (already > 0) continue;
@@ -526,53 +660,79 @@ function settleDaily(req) {
     const maxY = Number(room.daily_yield_max || 0.5);
     const yieldRate = randBetween(minY, maxY);
     const profit = Number((principal * yieldRate / 100).toFixed(4));
-    if (profit <= 0) continue;
     const feePct = Number(room.performance_fee || 10);
     const custPct = Number(room.customer_share || 50);
-    const traderShare = Number((profit * feePct / 100).toFixed(4));
-    const customerShare = Number((profit * custPct / 100).toFixed(4));
-    const fundShare = Number((profit - traderShare - customerShare).toFixed(4));
-    // credit customer
     const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(f.uid);
-    if (user) {
+    if (!user) continue;
+    if (profit >= 0) {
+      const traderShare = Number((profit * feePct / 100).toFixed(4));
+      const customerShare = Number((profit * custPct / 100).toFixed(4));
+      const fundShare = Number((profit - traderShare - customerShare).toFixed(4));
       db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ? WHERE id = ?').run(customerShare, customerShare, customerShare, user.id);
+      db.prepare('UPDATE rooms SET total_profit = total_profit + ?, leader_earnings = COALESCE(leader_earnings,0) + ? WHERE id = ?').run(profit, traderShare, room.id);
+      db.prepare('INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, profit, traderShare, customerShare, fundShare, today);
+      if (fundShare > 0) db.prepare('UPDATE platform_pool SET balance = balance + ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = 1').run(fundShare);
+      profitByUid[user.uid] = (profitByUid[user.uid] || 0) + profit;
+      // 权益累计
+      const curEquity = (f.equity || principal) + customerShare;
+      db.prepare('UPDATE follows SET equity = ? WHERE id = ?').run(Number(curEquity.toFixed(4)), f.id);
+    } else {
+      // 亏损日：客户按本金全额承担亏损（分成比例仅作用于盈利）
+      const loss = Math.abs(profit);
+      const customerLoss = loss;
+      if (customerLoss > 0) db.prepare('UPDATE users SET balance = balance - ?, available = available - ? WHERE id = ?').run(customerLoss, customerLoss, user.id);
+      db.prepare('INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, -loss, 0, -customerLoss, 0, today);
+      const curEquity = (f.equity || principal) - customerLoss;
+      db.prepare('UPDATE follows SET equity = ? WHERE id = ?').run(Number(curEquity.toFixed(4)), f.id);
+      // 止损检查
+      if (f.stop_loss > 0 && curEquity <= principal * (1 - f.stop_loss / 100)) {
+        db.prepare('UPDATE follows SET stop_triggered = 1 WHERE id = ?').run(f.id);
+      }
     }
-    // record trader earnings on room
-    db.prepare('UPDATE rooms SET total_profit = total_profit + ?, leader_earnings = COALESCE(leader_earnings,0) + ? WHERE id = ?').run(profit, traderShare, room.id);
-    // insert yield record
-    db.prepare('INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-      .run(f.id, f.uid, room.id, room.name, principal, yieldRate, profit, traderShare, customerShare, fundShare, today);
-    // fund pool -> referral rewards (3 levels)
-    allocateReferralRewards(user, fundShare, room.name, today);
     count++;
   }
+  // 等级化推荐奖励：直推跟单奖励 + 团队收益奖励（从资金池支付）
+  distributeLevelRewards(profitByUid, today);
   return { skipped: false, count };
 }
 
-function allocateReferralRewards(user, fundShare, source, date) {
-  if (!user || fundShare <= 0) return;
-  const levels = [
-    { level: 1, pct: 0.50 },
-    { level: 2, pct: 0.30 },
-    { level: 3, pct: 0.20 },
-  ];
-  let prevId = user.referrer_id;
-  let unallocated = fundShare;
-  for (const lv of levels) {
-    if (!prevId) break;
-    const ref = db.prepare('SELECT * FROM users WHERE id = ?').get(prevId);
-    if (!ref) break;
-    const amt = Number((fundShare * lv.pct).toFixed(4));
-    if (amt > 0) {
-      db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ? WHERE id = ?').run(amt, amt, amt, ref.id);
-      db.prepare('INSERT INTO referral_rewards (from_uid,from_name,to_uid,to_name,level,amount,source) VALUES (?,?,?,?,?,?,?)')
-        .run(user.uid, user.name, ref.uid, ref.name, lv.level, amt, source + ' ' + date);
-      unallocated = Number((unallocated - amt).toFixed(4));
+function distributeLevelRewards(profitByUid, date) {
+  const referrers = db.prepare('SELECT * FROM users WHERE id IN (SELECT DISTINCT referrer_id FROM users WHERE referrer_id IS NOT NULL)').all();
+  for (const u of referrers) {
+    const m = computeMetrics(u.id);
+    db.prepare('UPDATE users SET user_level = ? WHERE id = ?').run(m.level, u.id);
+    const rule = LEVEL_RULES[m.level];
+    // 直推用户跟单收益奖励
+    let directProfit = 0;
+    for (const did of m.directIds) {
+      const du = db.prepare('SELECT uid FROM users WHERE id = ?').get(did);
+      if (du && profitByUid[du.uid]) directProfit += profitByUid[du.uid];
     }
-    prevId = ref.referrer_id;
-  }
-  if (unallocated > 0) {
-    db.prepare('INSERT INTO fund_pool (amount, note) VALUES (?,?)').run(unallocated, '平台留存 ' + source + ' ' + date);
+    const directAmt = Number((directProfit * rule.directRate).toFixed(4));
+    // 团队收益奖励（L1+）
+    let teamProfit = 0;
+    for (const did of m.desc) {
+      const du = db.prepare('SELECT uid FROM users WHERE id = ?').get(did);
+      if (du && profitByUid[du.uid]) teamProfit += profitByUid[du.uid];
+    }
+    const teamAmt = Number((teamProfit * rule.teamRate).toFixed(4));
+    const pool = db.prepare('SELECT balance FROM platform_pool WHERE id = 1').get();
+    let poolBalance = pool ? pool.balance : 0;
+    if (directAmt > 0 && poolBalance > 0) {
+      const pay = Math.min(directAmt, poolBalance);
+      addAvailable(u.id, pay);
+      db.prepare('UPDATE platform_pool SET balance = balance - ? WHERE id = 1').run(pay);
+      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'direct', pay, '直推跟单奖励 ' + date);
+      poolBalance -= pay;
+    }
+    if (teamAmt > 0 && poolBalance > 0) {
+      const pay = Math.min(teamAmt, poolBalance);
+      addAvailable(u.id, pay);
+      db.prepare('UPDATE platform_pool SET balance = balance - ? WHERE id = 1').run(pay);
+      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'team', pay, '团队收益奖励 ' + date);
+    }
   }
 }
 
@@ -594,6 +754,38 @@ app.get('/api/admin/yields', auth, (req, res) => {
   res.json(rows);
 });
 
+app.get('/api/admin/team-rewards', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM team_rewards ORDER BY id DESC LIMIT 200').all());
+});
+
+app.get('/api/admin/invite-rewards', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM invite_rewards ORDER BY id DESC LIMIT 200').all());
+});
+
+// 模拟房间亏损（用于测试止损）
+app.post('/api/admin/rooms/:id/loss', auth, (req, res) => {
+  const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(req.params.id);
+  if (!room) return res.status(404).json({ error: '房间不存在' });
+  const pct = Math.abs(Number(req.body && req.body.pct) || 1);
+  const follows = db.prepare("SELECT * FROM follows WHERE room_id=? AND status='active'").all(room.id);
+  let affected = 0;
+  for (const f of follows) {
+    const loss = Number((f.allocated * pct / 100).toFixed(4));
+    const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(f.uid);
+    if (!user) continue;
+    const custLoss = loss;
+    if (custLoss > 0) db.prepare('UPDATE users SET balance = balance - ?, available = available - ? WHERE id = ?').run(custLoss, custLoss, user.id);
+    const equity = ((f.equity || f.allocated) - custLoss);
+    db.prepare("INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))")
+      .run(f.id, f.uid, room.id, room.name, f.allocated, -pct, -loss, 0, -custLoss, 0);
+    db.prepare('UPDATE follows SET equity = ? WHERE id = ?').run(Number(equity.toFixed(4)), f.id);
+    if (f.stop_loss > 0 && equity <= f.allocated * (1 - f.stop_loss / 100)) {
+      db.prepare('UPDATE follows SET stop_triggered = 1 WHERE id = ?').run(f.id);
+    }
+    affected++;
+  }
+  res.json({ ok: true, affected });
+});
 // ================= 用户收益与推荐奖励 =================
 app.get('/api/public/yields', (req, res) => {
   const uid = String(req.query.uid || '');
@@ -651,6 +843,101 @@ app.post('/api/public/groups/:id/message', (req, res) => {
 
 // 投资：达到100%自动建群 + 加入群
 const originalInvest = app.post.bind(app);
+
+// ================= 二维码 / 上传 / 行情 =================
+app.get('/api/public/qrcode', async (req, res) => {
+  try {
+    const text = String(req.query.text || 'https://elitetrade.onrender.com');
+    const buf = await QRCode.toBuffer(text.slice(0, 500), { width: 260, margin: 1 });
+    res.type('png').send(buf);
+  } catch (e) { res.status(400).json({ error: '二维码生成失败' }); }
+});
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + String(file.originalname || 'img.png').replace(/[^a-zA-Z0-9.]/g, '_'))
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+app.post('/api/admin/upload', auth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '未收到文件' });
+  const url = '/uploads/' + req.file.filename;
+  res.json({ ok: true, url, name: req.file.originalname });
+});
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ================= 交易品种（行情）管理 =================
+app.get('/api/admin/quotes', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM quotes ORDER BY category, symbol').all());
+});
+app.post('/api/admin/quotes', auth, (req, res) => {
+  const b = req.body || {};
+  if (!b.symbol) return res.status(400).json({ error: '请输入品种代码' });
+  db.prepare('INSERT OR REPLACE INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id) VALUES (?,?,?,?,?,?,?)')
+    .run(String(b.symbol).toUpperCase(), b.name || b.symbol, Number(b.price) || 0, Number(b.askPrice) || Number(b.price) || 0, Number(b.change) || 0, b.category || 'forex', b.apiId || null);
+  res.json({ ok: true });
+});
+app.put('/api/admin/quotes/:symbol', auth, (req, res) => {
+  const b = req.body || {};
+  const cur = db.prepare('SELECT * FROM quotes WHERE symbol = ?').get(req.params.symbol);
+  if (!cur) return res.status(404).json({ error: '品种不存在' });
+  db.prepare('UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=? WHERE symbol=?')
+    .run(b.name ?? cur.name, b.price ?? cur.price, b.askPrice ?? cur.ask_price, b.change ?? cur.change_percent, b.category ?? cur.category, b.apiId ?? cur.api_id, req.params.symbol);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/quotes/:symbol', auth, (req, res) => {
+  db.prepare('DELETE FROM quotes WHERE symbol = ?').run(req.params.symbol);
+  res.json({ ok: true });
+});
+// 实时刷新加密币价格（CoinGecko 免费 API，无需 key）
+app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
+  try {
+    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto' AND api_id IS NOT NULL AND api_id != ''").all();
+    const ids = rows.map(r => r.api_id).join(',');
+    if (!ids) return res.json({ ok: true, updated: 0 });
+    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(15000) });
+    const j = await resp.json();
+    let updated = 0;
+    for (const r of rows) {
+      const p = j[r.api_id] && j[r.api_id].usd;
+      if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
+    }
+    res.json({ ok: true, updated });
+  } catch (e) { res.status(500).json({ error: '刷新失败: ' + e.message }); }
+});
+// 走势图历史
+app.get('/api/public/quotes/history', (req, res) => {
+  const symbol = String(req.query.symbol || '').toUpperCase();
+  const rows = db.prepare('SELECT price, ts FROM price_history WHERE symbol = ? ORDER BY id DESC LIMIT 60').all(symbol);
+  res.json(rows.reverse());
+});
+// 定时：加密币 5 分钟刷新一次
+setInterval(async () => {
+  try {
+    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto' AND api_id IS NOT NULL AND api_id != ''").all();
+    const ids = rows.map(r => r.api_id).join(',');
+    if (!ids) return;
+    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(12000) });
+    const j = await resp.json();
+    for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); } }
+  } catch (e) {}
+}, 300000);
+
+// ================= 团队总览（后台）=================
+app.get('/api/admin/team', auth, (req, res) => {
+  const users = db.prepare('SELECT id, uid, name, user_level, frozen_balance, kyc_status FROM users').all();
+  const out = [];
+  for (const u of users) {
+    const m = computeMetrics(u.id);
+    const direct = db.prepare('SELECT uid, name, kyc_status, user_level FROM users WHERE referrer_id = ?').all(u.id);
+    out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'L0', calcLevel: m.level, directVerified: m.directVerified, teamVolume: m.volume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
+  }
+  res.json(out);
+});
+app.get('/api/admin/fund-pool', auth, (req, res) => {
+  const pool = db.prepare('SELECT balance FROM platform_pool WHERE id=1').get();
+  res.json({ balance: pool ? pool.balance : 0 });
+});
+
 // ---------- static ----------
 const ADMIN_DIST = path.join(ROOT, 'admin-dist');
 const FRONT_DIST = path.join(ROOT, 'frontend-dist');
