@@ -895,7 +895,7 @@ app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
     const prices = await fetchCryptoPrices(rows);
     let updated = 0;
     for (const r of rows) {
-      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')];
+      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')] || prices[String(r.symbol).split('/')[0]];
       if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
     }
     res.json({ ok: true, updated });
@@ -910,31 +910,34 @@ app.get('/api/public/quotes/history', (req, res) => {
 
 async function fetchCryptoPrices(rows) {
   const out = {};
-  const bn = [];
-  for (const r of rows) {
-    const sym = String(r.symbol || '').replace(/\//g, '');
-    if (sym) bn.push(sym);
-  }
-  // Binance multi-symbol ticker
+  // 1) Coinbase (US 服务器可访问、免 key)：BTC-USD / ETH-USD / SOL-USD
   try {
-    const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(bn));
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const j = await resp.json();
-    if (Array.isArray(j)) {
-      for (const item of j) {
-        const sym = String(item.symbol || '').replace('USDT', '/USDT');
-        if (item.price) out[sym] = Number(item.price);
-      }
-      return out;
-    }
+    const bases = [...new Set(rows.map(r => String(r.symbol || '').split('/')[0]).filter(Boolean))];
+    const results = await Promise.all(bases.map(async (b) => {
+      try {
+        const resp = await fetch('https://api.coinbase.com/v2/prices/' + b + '-USD/spot', { signal: AbortSignal.timeout(8000) });
+        const j = await resp.json();
+        return { base: b, price: j && j.data && Number(j.data.amount) };
+      } catch (e) { return { base: b, price: null }; }
+    }));
+    for (const res of results) { if (res.price) out[res.base] = res.price; }
+    if (Object.keys(out).length >= rows.length) return out;
   } catch (e) {}
-  // CoinGecko fallback by api_id
+  // 2) Binance 兜底
+  try {
+    const bn = rows.map(r => String(r.symbol || '').replace(/\//g, ''));
+    const resp = await fetch('https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(bn)), { signal: AbortSignal.timeout(8000) });
+    const j = await resp.json();
+    if (Array.isArray(j)) { for (const item of j) { const sym = String(item.symbol || '').replace('USDT', '/USDT'); if (item.price) out[sym] = Number(item.price); } }
+  } catch (e) {}
+  // 3) CoinGecko 兜底（按 api_id）
   try {
     const ids = rows.map(r => r.api_id).filter(Boolean).join(',');
-    if (!ids) return out;
-    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(10000) });
-    const j = await resp.json();
-    for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) out[r.symbol] = p; }
+    if (ids) {
+      const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(8000) });
+      const j = await resp.json();
+      for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) out[r.symbol] = p; }
+    }
   } catch (e) {}
   return out;
 }
@@ -945,7 +948,7 @@ setInterval(async () => {
     const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
     const prices = await fetchCryptoPrices(rows);
     for (const r of rows) {
-      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')];
+      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')] || prices[String(r.symbol).split('/')[0]];
       if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); }
     }
   } catch (e) {}
