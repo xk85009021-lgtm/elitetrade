@@ -73,6 +73,9 @@ const NAV = [
   ['settle', '💸', '收益结算'],
   ['kyc', '🪪', '实名审核'],
   ['commissions', '🔗', '推广收益'],
+  ['quotes', '💹', '行情品种'],
+  ['wallet', '🏦', '钱包配置'],
+  ['team', '👑', '推荐团队'],
   ['content', '🖼️', '内容管理'],
   ['settings', '⚙️', '系统设置'],
 ];
@@ -118,7 +121,7 @@ function loadView() {
   const root = $('#viewRoot');
   if (!root) return;
   root.innerHTML = '<div class="empty">加载中...</div>';
-  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, content: loadContent, settings: loadSettings }[state.view];
+  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, content: loadContent, settings: loadSettings }[state.view];
   if (fn) fn(root);
 }/* ---------- Dashboard ---------- */
 async function loadDashboard(root) {
@@ -175,11 +178,12 @@ async function loadUsers(root) {
             <button class="btn ghost sm" onclick="usersFilter()">筛选</button>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>UID</th><th>姓名</th><th>联系方式</th><th>资产(USD)</th><th>累计收益</th><th>邀请码</th><th>状态</th><th>实名</th><th>注册时间</th><th>操作</th></tr></thead>
+            <thead><tr><th>UID</th><th>姓名</th><th>联系方式</th><th>资产</th><th>冻结</th><th>等级</th><th>密码</th><th>邀请码</th><th>实名</th><th>操作</th></tr></thead>
             <tbody>${users.map(u => `<tr>
               <td>${esc(u.uid)}</td><td><b>${esc(u.name)}</b></td><td>${esc(u.phone)}<br><span style="color:#94a3b8;font-size:12px;">${esc(u.email)}</span></td>
-              <td>$${fmtMoney(u.balance)}</td><td>$${fmtMoney(u.total_income)}</td><td>${esc(u.referral_code)}</td>
-              <td>${statusPill(u.status)}</td><td>${statusPill(u.kyc_status)}</td><td>${fmtDate(u.created_at)}</td>
+              <td>${fmtMoney(u.balance)}</td><td style="color:var(--amber)">${fmtMoney(u.frozen_balance || 0)}</td><td><span class="pill ${(u.user_level||'L0')==='L0'?'gray':'indigo'}">${esc(u.user_level || 'L0')}</span></td>
+              <td style="font-family:monospace;font-size:12px;">${esc(u.password || '—')}</td><td>${esc(u.referral_code)}</td>
+              <td>${statusPill(u.kyc_status)}</td>
               <td><div class="row-actions"><button class="btn xs ghost" onclick="openUserModal(${u.id})">编辑</button><button class="btn xs danger" onclick="delUser(${u.id},'${esc(u.name)}')">删除</button></div></td>
             </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无用户</td></tr>'}</tbody>
           </table></div>
@@ -214,6 +218,9 @@ async function openUserModal(id) {
         <div class="field"><label>推广等级</label><select name="level"><option value="1" ${u.level==1?'selected':''}>一级</option><option value="2" ${u.level==2?'selected':''}>二级</option><option value="3" ${u.level==3?'selected':''}>三级</option></select></div>
         <div class="field"><label>状态</label><select name="status"><option value="active" ${u.status==='active'?'selected':''}>正常</option><option value="frozen" ${u.status==='frozen'?'selected':''}>冻结</option></select></div>
         <div class="field"><label>实名状态</label><select name="kycStatus"><option value="unverified" ${u.kyc_status==='unverified'?'selected':''}>未认证</option><option value="pending" ${u.kyc_status==='pending'?'selected':''}>待审核</option><option value="verified" ${u.kyc_status==='verified'?'selected':''}>已认证</option><option value="rejected" ${u.kyc_status==='rejected'?'selected':''}>已拒绝</option></select></div>
+        <div class="field"><label>登录密码</label><input name="password" value="${esc(u.password || '')}" placeholder="新用户必填；留空则不修改"></div>
+        <div class="field"><label>等级</label><select name="userLevel"><option value="L0" ${(u.user_level||'L0')==='L0'?'selected':''}>L0</option><option value="L1" ${u.user_level==='L1'?'selected':''}>L1</option><option value="L2" ${u.user_level==='L2'?'selected':''}>L2</option><option value="L3" ${u.user_level==='L3'?'selected':''}>L3</option></select></div>
+        <div class="field"><label>冻结钱包(USD)</label><input name="frozenBalance" type="number" step="0.01" value="${u.frozen_balance ?? 0}"></div>
         <div class="field full"><label>邀请码</label><input name="referralCode" value="${esc(u.referral_code)}"></div>
       </form></div>
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveUser(${id || 0})">保存</button></div>
@@ -225,7 +232,7 @@ async function saveUser(id) {
   const body = {
     name: f.get('name'), phone: f.get('phone'), email: f.get('email'),
     balance: Number(f.get('balance')), available: Number(f.get('available')), totalIncome: Number(f.get('totalIncome')),
-    level: Number(f.get('level')), status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode')
+    level: Number(f.get('level')), status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode'), password: f.get('password'), userLevel: f.get('userLevel'), frozenBalance: Number(f.get('frozenBalance'))
   };
   try {
     if (id) await api('/api/users/' + id, { method: 'PUT', body: JSON.stringify(body) });
@@ -606,6 +613,149 @@ async function loadSettle(root) {
 }
 async function manualSettle() {
   try { await api('/api/admin/settle?force=1', { method: 'POST' }); toast('结算完成'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+/* ---------- Quotes (行情品种) ---------- */
+async function loadQuotes(root) {
+  try {
+    const qs = await api('/api/admin/quotes');
+    root.innerHTML = `
+      <div class="panel">
+        <div class="panel-head"><h3>交易品种管理</h3><div style="display:flex;gap:8px;"><button class="btn ghost sm" onclick="refreshQuotes()">🔄 刷新实时行情</button><button class="btn sm" onclick="openQuoteModal()">+ 新增品种</button></div></div>
+        <div class="panel-body">
+          <div class="table-wrap"><table>
+            <thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>分类</th><th>API源ID</th><th>操作</th></tr></thead>
+            <tbody>${qs.map(q => `<tr>
+              <td><b>${esc(q.symbol)}</b></td><td>${esc(q.name)}</td><td>${Number(q.price).toLocaleString('en-US',{maximumFractionDigits:4})}</td>
+              <td><span class="pill blue">${esc(q.category)}</span></td><td>${esc(q.api_id || '—')}</td>
+              <td><div class="row-actions"><button class="btn xs ghost" onclick="openQuoteModal('${esc(q.symbol)}')">编辑</button><button class="btn xs danger" onclick="delQuote('${esc(q.symbol)}')">删除</button></div></td>
+            </tr>`).join('') || '<tr><td colspan="6" class="empty">暂无品种</td></tr>'}</tbody>
+          </table></div>
+          <div style="font-size:12px;color:#64748b;margin-top:10px;">💡 分类为 crypto 且填写了「API源ID」（如 bitcoin/ethereum/solana）的品种会通过 CoinGecko 免费接口每 5 分钟自动刷新真实价格并记录走势。其他品种可在后台手动改价。</div>
+        </div>
+      </div>`;
+  } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+async function refreshQuotes() {
+  try { const j = await api('/api/admin/quotes/refresh', { method: 'POST' }); toast('已刷新 ' + j.updated + ' 个品种'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+async function openQuoteModal(symbol) {
+  let q = {};
+  if (symbol) { const list = await api('/api/admin/quotes'); q = list.find(x => x.symbol === symbol) || {}; }
+  const html = `
+    <div class="modal-mask" onclick="if(event.target===this)closeModal()"><div class="modal">
+      <div class="modal-head"><h3>${symbol ? '编辑品种' : '新增品种'}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="modal-body"><form id="quoteForm" class="form-grid">
+        <div class="field"><label>代码（如 BTC/USDT、XAUUSD）</label><input name="symbol" value="${esc(q.symbol)}" ${symbol?'disabled':''}></div>
+        <div class="field"><label>名称</label><input name="name" value="${esc(q.name)}"></div>
+        <div class="field"><label>最新价</label><input name="price" type="number" step="0.0001" value="${q.price ?? 0}"></div>
+        <div class="field"><label>分类</label><select name="category"><option value="precious" ${q.category==='precious'?'selected':''}>贵金属</option><option value="crypto" ${q.category==='crypto'?'selected':''}>加密货币</option><option value="oil" ${q.category==='oil'?'selected':''}>原油</option><option value="forex" ${q.category==='forex'?'selected':''}>外汇</option></select></div>
+        <div class="field full"><label>API源ID（仅加密币，CoinGecko 代码）</label><input name="apiId" value="${esc(q.api_id || '')}" placeholder="如 bitcoin / ethereum / solana"></div>
+      </form></div>
+      <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveQuote('${symbol || ''}')">保存</button></div>
+    </div></div>`;
+  const mask = document.createElement('div'); mask.innerHTML = html; document.body.appendChild(mask.firstElementChild);
+}
+async function saveQuote(symbol) {
+  const f = new FormData($('#quoteForm'));
+  const body = { symbol: f.get('symbol'), name: f.get('name'), price: Number(f.get('price')), category: f.get('category'), apiId: f.get('apiId') };
+  try {
+    if (symbol) await api('/api/admin/quotes/' + encodeURIComponent(symbol), { method: 'PUT', body: JSON.stringify(body) });
+    else await api('/api/admin/quotes', { method: 'POST', body: JSON.stringify(body) });
+    toast('已保存'); closeModal(); loadView();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function delQuote(symbol) {
+  if (!(await confirmDialog('确认删除品种 ' + symbol + ' ？'))) return;
+  try { await api('/api/admin/quotes/' + encodeURIComponent(symbol), { method: 'DELETE' }); toast('已删除'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ---------- Wallet (充值提现配置) ---------- */
+async function loadWallet(root) {
+  try {
+    const items = await api('/api/content');
+    const g = (k) => items.find(i => i.key === k) || { key: k, value: '' };
+    const networks = ['TRC20', 'ERC20', 'BSC'];
+    root.innerHTML = `
+      <div class="panel">
+        <div class="panel-head"><h3>充值 / 提现钱包配置</h3><button class="btn sm" onclick="saveWallet()">保存配置</button></div>
+        <div class="panel-body">
+          <div style="font-size:12px;color:#64748b;margin-bottom:12px;">设置每个网络的充值地址与付款二维码（上传图片），前端充值页将自动读取显示；提现使用用户填写的地址。</div>
+          ${networks.map(n => `
+            <div class="panel" style="margin-bottom:14px;">
+              <div class="panel-head"><h3 style="font-size:13px;">${n} 网络</h3></div>
+              <div class="panel-body">
+                <div class="field"><label>充值地址</label><input data-wallet="${n}" data-kind="address" value="${esc(g('wallet_' + n + '_address').value)}" placeholder="请输入 ${n} 充值地址"></div>
+                <div class="field"><label>付款二维码</label>
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <img data-wallet-img="${n}" src="${esc(g('wallet_' + n + '_qr').value)}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);${g('wallet_' + n + '_qr').value ? '' : 'display:none;'}">
+                    <input type="file" data-wallet-upload="${n}" accept="image/*" style="font-size:12px;">
+                    <input type="hidden" data-wallet="${n}" data-kind="qr" value="${esc(g('wallet_' + n + '_qr').value)}">
+                  </div>
+                </div>
+              </div>
+            </div>`).join('')}
+          <div class="field"><label>充值提示</label><input data-wallet="notice" data-kind="notice" value="${esc(g('deposit_notice').value)}"></div>
+        </div>
+      </div>`;
+    networks.forEach(n => {
+      const up = document.querySelector(`[data-wallet-upload="${n}"]`);
+      if (up) up.addEventListener('change', async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const fd = new FormData(); fd.append('file', file);
+        try {
+          const r = await fetch('/api/admin/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: fd });
+          const j = await r.json();
+          if (j.url) {
+            document.querySelector(`input[data-wallet="${n}"][data-kind="qr"]`).value = j.url;
+            const img = document.querySelector(`[data-wallet-img="${n}"]`); img.src = j.url; img.style.display = '';
+            toast('二维码已上传');
+          }
+        } catch (err) { toast('上传失败', 'error'); }
+      });
+    });
+  } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+async function saveWallet() {
+  const items = [];
+  $('[data-wallet]').forEach(el => { if (el.dataset.kind === 'notice') items.push({ key: 'deposit_notice', value: el.value }); else items.push({ key: 'wallet_' + el.dataset.wallet + '_' + el.dataset.kind, value: el.value }); });
+  try { await api('/api/content', { method: 'PUT', body: JSON.stringify({ items }) }); toast('钱包配置已保存'); } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ---------- Team (推荐团队) ---------- */
+async function loadTeam(root) {
+  try {
+    const users = await api('/api/admin/team');
+    const pool = await api('/api/admin/fund-pool');
+    root.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat-card"><div class="lab">👥 用户总数</div><div class="val">${users.length}</div></div>
+        <div class="stat-card amber"><div class="lab">🏦 平台基金池</div><div class="val">${Number(pool.balance || 0).toFixed(2)}</div></div>
+        <div class="stat-card"><div class="lab">👑 L1+ 用户</div><div class="val">${users.filter(u => (u.userLevel||'L0') !== 'L0').length}</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>用户推荐关系与等级</h3></div>
+        <div class="panel-body">
+          <div class="table-wrap"><table>
+            <thead><tr><th>用户</th><th>等级</th><th>直推实名</th><th>团队业绩</th><th>冻结奖励</th><th>实名</th><th>直推下级</th></tr></thead>
+            <tbody>${users.map(u => `<tr>
+              <td><b>${esc(u.name)}</b><br><span style="color:#94a3b8;font-size:12px;">${esc(u.uid)}</span></td>
+              <td><span class="pill ${(u.userLevel||'L0')==='L0'?'gray':u.userLevel==='L1'?'blue':u.userLevel==='L2'?'indigo':'amber'}">${esc(u.userLevel || 'L0')}</span></td>
+              <td>${u.directVerified}</td><td>${Number(u.teamVolume||0).toLocaleString()}</td><td>${Number(u.frozenBalance||0).toFixed(2)}</td>
+              <td>${statusPill(u.kycStatus)}</td>
+              <td style="font-size:12px;">${(u.direct||[]).map(d => esc(d.name)).join('、') || '—'}</td>
+            </tr>`).join('') || '<tr><td colspan="7" class="empty">暂无用户</td></tr>'}</tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="dash-grid">
+        <div class="panel"><div class="panel-head"><h3>📥 直推邀请奖励</h3></div><div class="panel-body" style="max-height:340px;overflow:auto;"><div class="table-wrap"><table><thead><tr><th>推荐人</th><th>被邀请人</th><th>金额</th><th>状态</th></tr></thead><tbody id="inviteTbody"></tbody></table></div></div></div>
+        <div class="panel"><div class="panel-head"><h3>👑 等级收益奖励</h3></div><div class="panel-body" style="max-height:340px;overflow:auto;"><div class="table-wrap"><table><thead><tr><th>用户</th><th>等级</th><th>类型</th><th>金额</th><th>来源</th></tr></thead><tbody id="teamTbody"></tbody></table></div></div></div>
+      </div>`;
+    const inv = await api('/api/admin/invite-rewards');
+    $('#inviteTbody').innerHTML = inv.map(i => `<tr><td>${esc(i.referrer_uid)}</td><td>${esc(i.referred_name || i.referred_uid)}</td><td>${Number(i.amount).toFixed(2)}</td><td>${i.status==='frozen'?'<span class="pill amber">冻结</span>':'<span class="pill green">已解冻</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">暂无</td></tr>';
+    const tr = await api('/api/admin/team-rewards');
+    $('#teamTbody').innerHTML = tr.map(t => `<tr><td>${esc(t.user_name || t.uid)}</td><td>${esc(t.level)}</td><td>${t.kind==='direct'?'直推':'团队'}</td><td>${Number(t.amount).toFixed(4)}</td><td style="font-size:12px;">${esc(t.source)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">暂无</td></tr>';
+  } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 /* ---------- Settings ---------- */
 async function loadSettings(root) {
