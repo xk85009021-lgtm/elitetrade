@@ -611,23 +611,21 @@ app.post('/api/public/deposit/start', userAuth, (req, res) => {
 app.post('/api/public/deposit', userAuth, (req, res) => {
   if (!requireUsableAccount(req, res)) return;
   const b = req.body || {};
-  const orderId = Number(b.orderId || 0);
   const amount = Number(b.amount || 0);
   const depositUid = String(b.depositUid || '').trim();
-  const order = db.prepare("SELECT * FROM transactions WHERE id=? AND user_id=? AND type='deposit'").get(orderId, req.user.id);
-  if (!order) return res.status(404).json({ error: '充值订单不存在' });
-  if (order.status === 'pending') return res.status(409).json({ error: '订单已提交审核，不能修改；如需更换请先取消订单重新下单' });
-  if (order.status !== 'draft') return res.status(409).json({ error: '订单已结束，请重新下单充值' });
-  if (order.expires_at && order.expires_at < new Date().toISOString()) {
-    db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE id=?").run(order.id);
-    return res.status(410).json({ error: '充值订单已超过15分钟，请重新下单充值' });
-  }
+  const network = String(b.network || 'TRC20').trim();
+  const currency = String(b.currency || 'USDT').trim();
   if (amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
   if (!depositUid) return res.status(400).json({ error: '请输入充值 UID' });
   if (depositUid !== String(req.user.uid)) return res.status(403).json({ error: '充值 UID 与当前登录账号不一致' });
-  db.prepare("UPDATE transactions SET amount=?,status='pending',subtitle='充值待审核',deposit_uid=?,date=date('now'),time=time('now','localtime') WHERE id=?").run(amount, depositUid, order.id);
-  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核，收款地址 ' + order.address, 'deposit');
-  res.json({ ok: true, orderId: order.id, txn: order.txn_id, address: order.address, qrUrl: order.payment_qr, expiresAt: order.expires_at });
+  const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND address=? AND status='active'").get(network, currency, String(b.address || '').trim());
+  if (!addressRow) return res.status(400).json({ error: '充值地址已失效，请重新选择币种或网络' });
+  const paymentQr = addressRow.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(addressRow.address));
+  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
+  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time,deposit_uid,payment_qr,currency,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(txn, req.user.id, req.user.name, 'deposit', amount, network, addressRow.address, 'USDT Deposit', '充值待审核', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5), depositUid, paymentQr, currency, '');
+  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核，收款地址 ' + addressRow.address, 'deposit');
+  res.json({ ok: true, txn, address: addressRow.address, qrUrl: paymentQr });
 });
 
 app.put('/api/public/deposit/orders/:id/cancel', userAuth, (req, res) => {
