@@ -1,0 +1,126 @@
+# 盈透copy 用户端与运营后台
+
+盈透copy 是一个包含用户端、管理后台、资金审核、实名认证、跟单收益、推广关系和运营配置的全栈项目。当前版本已经完成 JWT 用户鉴权、bcrypt 密码哈希、审核幂等事务、统一房间日收益率、新加坡时区 06:00 结算、7 天跟单退出锁、通知、客服、带单审核、审计日志、动态项目名称和 Logo 上传。
+
+## 线上地址
+
+- 用户端：https://elitetrade.onrender.com/
+- 管理后台：https://elitetrade.onrender.com/admin/
+- GitHub：https://github.com/xk85009021-lgtm/elitetrade
+
+## 已实现功能
+
+### 用户端
+
+- 邀请链接和邀请码注册，推荐关系真实落库。
+- 用户 JWT 登录和 7 天会话。
+- 谷歌验证器 2FA。
+- 密码修改和忘记密码流程。
+- 实名认证和证件图片上传。
+- 充值申请和后台审核入账。
+- 提现申请和后台审核扣款。
+- 跟单房间列表、详情、协议确认、止损比例。
+- 房间每日统一随机收益率。
+- 每个房间在每天新加坡时间 06:00 自动结算。
+- 进入房间后最低 7 天才能退出。
+- 用户收益和止损权益真实计算。
+- 邀请奖励、冻结钱包和解冻。
+- L0 至 L3 推荐等级和团队奖励。
+- 众筹项目、股东群和群聊。
+- 真实通知中心。
+- 真实客服工单，后台可回复。
+- 我的跟单、财务记录、个人资料和头像上传。
+- 安全中心、登录设备和紧急冻结。
+
+### 管理后台
+
+- 数据看板。
+- 用户新增、编辑、删除、密码重置和资金调整。
+- 跟单房间新增、编辑、上下架、收益率区间、绩效费和交易员归属。
+- 众筹项目新增、编辑和删除。
+- 充值提现审核。
+- 实名认证审核。
+- 收益结算和手动结算。
+- 推广收益、邀请奖励和团队奖励。
+- 行情品种管理和实时加密行情刷新。
+- 钱包地址、付款二维码和内容管理。
+- 推荐关系和团队数据。
+- 客服工单。
+- 交易员带单审核。
+- 后台操作审计日志。
+- 项目名称和 Logo 修改。
+
+## 关键业务规则
+
+- 用户登录后使用 JWT，不再信任前端传入的 UID。
+- 用户密码使用 bcrypt 哈希存储，后台不再显示明文密码。
+- 充值、提现和实名审核只能处理一次，重复审核返回 409。
+- 每个房间每天只生成一个收益率，房间内全部用户使用同一收益率。
+- 自动结算按 Asia/Singapore 时区执行，06:00 开始检查。
+- 跟单创建后写入 7 天锁定时间，锁定期内禁止退出。
+- 基金池已取消，客户收益扣除交易员绩效费后全部进入客户可用余额。
+- 推广奖励由平台运营账户直接发放，不再依赖基金池。
+- 项目名称默认是“盈透copy”，后台可修改。
+- 后台可上传项目 Logo，用户端和后台都会读取该 Logo。
+
+## 本地运行
+
+\`\`\`bash
+cd elitetrade-admin
+npm install
+npm run start
+\`\`\`
+
+用户端：http://localhost:8787/  
+管理后台：http://localhost:8787/admin/
+
+本地首次开发环境管理员默认账号是 admin / Admin@123456。生产环境必须通过 ADMIN_INITIAL_PASSWORD 设置首次管理员密码。
+
+## 清空演示数据
+
+\`\`\`bash
+npm run reset-data
+\`\`\`
+
+该命令会删除用户、房间、项目、充值提现、实名、跟单、收益、通知、客服、审计和演示行情，只保留管理员、系统配置和内容配置。
+
+## Render 部署
+
+当前 GitHub 仓库已绑定 Render 服务。每次推送后可通过 Render 后台的 Manual Deploy 部署最新提交。
+
+生产环境必须配置：
+
+- ADMIN_INITIAL_PASSWORD
+- ADMIN_JWT_SECRET
+- USER_JWT_SECRET
+- APP_TZ=Asia/Singapore
+- MIN_FOLLOW_DAYS=7
+- SEED_DEMO_DATA=false
+
+### SQLite 持久化
+
+Render 免费实例不提供持久磁盘，重新部署或实例重启后 SQLite 会重置。要启用持久化，需要将 Web Service 升级到 Starter 或更高实例，并在 render.yaml 或 Render 控制台增加：
+
+- 磁盘名称：yingto-copy-data
+- 挂载目录：/var/data
+- 容量：1GB
+- DB_PATH=/var/data/elitetrade.db
+- UPLOAD_DIR=/var/data/uploads
+
+仓库中的 render.yaml 已配置好 Starter 和 1GB 持久磁盘模板。当前线上服务仍为 Free 实例，因此在完成付费实例升级前，线上数据仍属于临时数据。
+
+## 密码重置服务
+
+忘记密码支持邮件和短信通道。生产环境需要二选一配置：
+
+- 邮件：RESEND_API_KEY、PASSWORD_RESET_FROM
+- 短信：SMS_WEBHOOK_URL、SMS_WEBHOOK_TOKEN
+
+未配置服务时接口会明确返回“服务未配置”，不会伪造验证码。
+
+## 交付目录
+
+- 用户前端源码：elitetrade-app
+- 后端和管理后台：elitetrade-admin
+- SQLite 快照：database/elitetrade.db
+- 审查报告：EliteTrade与EA系统-全面审查报告.md

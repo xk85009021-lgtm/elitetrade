@@ -1139,7 +1139,8 @@ app.post('/api/admin/rooms/:id/loss', auth, (req, res) => {
 // ================= 二维码 / 上传 / 行情 =================
 app.get('/api/public/qrcode', async (req, res) => {
   try {
-    const text = String(req.query.text || (process.env.APP_URL || 'http://localhost:' + PORT));
+    const requestBase = (req.headers['x-forwarded-proto'] || req.protocol || 'https') + '://' + (req.headers['x-forwarded-host'] || req.get('host'));
+    const text = String(req.query.text || process.env.APP_URL || requestBase);
     const buf = await QRCode.toBuffer(text.slice(0, 500), { width: 260, margin: 1 });
     res.type('png').send(buf);
   } catch (e) { res.status(400).json({ error: '二维码生成失败' }); }
