@@ -1,11 +1,12 @@
 {
-  "name": "elitetrade-admin",
+  "name": "yingto-copy",
   "version": "1.0.0",
-  "description": "",
+  "description": "盈透copy 用户端与运营后台",
   "main": "index.js",
   "scripts": {
     "start": "node server/server.js",
-    "dev": "node server/server.js"
+    "dev": "node server/server.js",
+    "reset-data": "node scripts/reset-data.js"
   },
   "keywords": [],
   "author": "",

@@ -1,13 +1,43 @@
 services:
   - type: web
-    name: elitetrade
+    name: yingto-copy
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: npm install
     startCommand: node server/server.js
     healthCheckPath: /api/public/content
     envVars:
-      - key: JWT_SECRET
-        generateValue: true
       - key: NODE_ENV
         value: production
+      - key: APP_TZ
+        value: Asia/Singapore
+      - key: MIN_FOLLOW_DAYS
+        value: "7"
+      - key: SEED_DEMO_DATA
+        value: "false"
+      - key: DB_PATH
+        value: /var/data/elitetrade.db
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_INITIAL_PASSWORD
+        sync: false
+      - key: ADMIN_JWT_SECRET
+        generateValue: true
+      - key: USER_JWT_SECRET
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: PASSWORD_RESET_FROM
+        sync: false
+      - key: SMS_WEBHOOK_URL
+        sync: false
+      - key: SMS_WEBHOOK_TOKEN
+        sync: false
+    disk:
+      name: yingto-copy-data
+      mountPath: /var/data
+      sizeGB: 1

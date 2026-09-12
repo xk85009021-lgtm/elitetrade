@@ -1,4 +1,4 @@
-/* EliteTrade Admin Console */
+/* 盈透copy Admin Console */
 const $ = (sel, el=document) => el.querySelector(sel);
 const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
 const TOKEN_KEY = 'et_admin_token';
@@ -42,14 +42,14 @@ function renderLogin() {
   $('#app').innerHTML = `
     <div class="login-wrap">
       <div class="login-card">
-        <div class="login-logo"><div class="logo-box">ET</div><div><div class="login-title">EliteTrade 管理后台</div></div></div>
+        <div class="login-logo"><div class="logo-box">ET</div><div><div class="login-title">盈透copy 管理后台</div></div></div>
         <div class="login-sub">智能量化交易与实体众筹投资平台 · 运营管理控制台</div>
         <form id="loginForm">
           <div class="field"><label>管理员账号</label><input name="username" placeholder="请输入账号" autocomplete="username" value="admin"></div>
           <div class="field"><label>密码</label><input name="password" type="password" placeholder="请输入密码" autocomplete="current-password"></div>
           <button class="btn full" type="submit">登 录</button>
         </form>
-        <div style="margin-top:16px;font-size:12px;color:#94a3b8;text-align:center;">默认账号 admin / Admin@123456（登录后请及时修改密码）</div>
+        
       </div>
     </div>`;
   $('#loginForm').addEventListener('submit', async e => {
@@ -76,7 +76,10 @@ const NAV = [
   ['quotes', '💹', '行情品种'],
   ['wallet', '🏦', '钱包配置'],
   ['team', '👑', '推荐团队'],
+  ['support', '💬', '客服工单'],
+  ['leads', '🎯', '带单审核'],
   ['content', '🖼️', '内容管理'],
+  ['audit', '🧾', '审计日志'],
   ['settings', '⚙️', '系统设置'],
 ];
 const NAV_TITLES = Object.fromEntries(NAV.map(n => [n[0], n[2]]));
@@ -87,7 +90,7 @@ function renderLayout() {
   $('#app').innerHTML = `
     <div class="layout">
       <aside class="sidebar">
-        <div class="side-head"><div class="logo-box">ET</div><div><div class="t1">EliteTrade</div><div class="t2">管理后台</div></div></div>
+        <div class="side-head"><div class="logo-box">ET</div><div><div class="t1">盈透copy</div><div class="t2">管理后台</div></div></div>
         <nav class="side-nav">
           ${NAV.map(([id, ic, lab]) => `<button class="nav-item ${state.view === id ? 'active' : ''}" data-nav="${id}"><span class="ic">${ic}</span><span class="lab">${lab}</span>${badges[id] ? `<span class="nav-badge">${badges[id]}</span>` : ''}</button>`).join('')}
         </nav>
@@ -107,7 +110,13 @@ function renderLayout() {
         <main class="content" id="viewRoot"></main>
       </div>
     </div>`;
-  $$('.nav-item').forEach(b => b.addEventListener('click', () => { state.view = b.dataset.nav; renderLayout(); loadView(); }));
+  fetch('/api/public/content').then(r => r.json()).then(c => {
+    const logo = document.querySelector('.side-head .logo-box');
+    const title = document.querySelector('.side-head .t1');
+    if (logo && c.app_logo) logo.innerHTML = '<img src="' + esc(c.app_logo) + '" style="width:100%;height:100%;object-fit:contain;">';
+    if (title && c.app_name) title.textContent = c.app_name;
+  }).catch(() => {});
+  $('.nav-item').forEach(b => b.addEventListener('click', () => { state.view = b.dataset.nav; renderLayout(); loadView(); }));
   $('#logoutBtn').addEventListener('click', logout);
   loadView();
 }
@@ -121,7 +130,7 @@ function loadView() {
   const root = $('#viewRoot');
   if (!root) return;
   root.innerHTML = '<div class="empty">加载中...</div>';
-  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, content: loadContent, settings: loadSettings }[state.view];
+  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, support: loadSupport, leads: loadLeads, content: loadContent, audit: loadAudit, settings: loadSettings }[state.view];
   if (fn) fn(root);
 }/* ---------- Dashboard ---------- */
 async function loadDashboard(root) {
@@ -178,11 +187,11 @@ async function loadUsers(root) {
             <button class="btn ghost sm" onclick="usersFilter()">筛选</button>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>UID</th><th>姓名</th><th>联系方式</th><th>资产</th><th>冻结</th><th>等级</th><th>密码</th><th>邀请码</th><th>实名</th><th>操作</th></tr></thead>
+            <thead><tr><th>UID</th><th>姓名</th><th>联系方式</th><th>资产</th><th>冻结</th><th>等级</th><th>密码状态</th><th>邀请码</th><th>实名</th><th>操作</th></tr></thead>
             <tbody>${users.map(u => `<tr>
               <td>${esc(u.uid)}</td><td><b>${esc(u.name)}</b></td><td>${esc(u.phone)}<br><span style="color:#94a3b8;font-size:12px;">${esc(u.email)}</span></td>
               <td>${fmtMoney(u.balance)}</td><td style="color:var(--amber)">${fmtMoney(u.frozen_balance || 0)}</td><td><span class="pill ${(u.user_level||'L0')==='L0'?'gray':'indigo'}">${esc(u.user_level || 'L0')}</span></td>
-              <td style="font-family:monospace;font-size:12px;">${esc(u.password || '—')}</td><td>${esc(u.referral_code)}</td>
+              <td><span class="pill green">bcrypt 加密</span></td><td>${esc(u.referral_code)}</td>
               <td>${statusPill(u.kyc_status)}</td>
               <td><div class="row-actions"><button class="btn xs ghost" onclick="openUserModal(${u.id})">编辑</button><button class="btn xs danger" onclick="delUser(${u.id},'${esc(u.name)}')">删除</button></div></td>
             </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无用户</td></tr>'}</tbody>
@@ -218,7 +227,7 @@ async function openUserModal(id) {
         <div class="field"><label>推广等级</label><select name="level"><option value="1" ${u.level==1?'selected':''}>一级</option><option value="2" ${u.level==2?'selected':''}>二级</option><option value="3" ${u.level==3?'selected':''}>三级</option></select></div>
         <div class="field"><label>状态</label><select name="status"><option value="active" ${u.status==='active'?'selected':''}>正常</option><option value="frozen" ${u.status==='frozen'?'selected':''}>冻结</option></select></div>
         <div class="field"><label>实名状态</label><select name="kycStatus"><option value="unverified" ${u.kyc_status==='unverified'?'selected':''}>未认证</option><option value="pending" ${u.kyc_status==='pending'?'selected':''}>待审核</option><option value="verified" ${u.kyc_status==='verified'?'selected':''}>已认证</option><option value="rejected" ${u.kyc_status==='rejected'?'selected':''}>已拒绝</option></select></div>
-        <div class="field"><label>登录密码</label><input name="password" value="${esc(u.password || '')}" placeholder="新用户必填；留空则不修改"></div>
+        <div class="field"><label>设置新密码</label><input name="password" type="password" value="" placeholder="留空则不修改；旧密码无法查看"></div>
         <div class="field"><label>等级</label><select name="userLevel"><option value="L0" ${(u.user_level||'L0')==='L0'?'selected':''}>L0</option><option value="L1" ${u.user_level==='L1'?'selected':''}>L1</option><option value="L2" ${u.user_level==='L2'?'selected':''}>L2</option><option value="L3" ${u.user_level==='L3'?'selected':''}>L3</option></select></div>
         <div class="field"><label>冻结钱包(USD)</label><input name="frozenBalance" type="number" step="0.01" value="${u.frozen_balance ?? 0}"></div>
         <div class="field full"><label>邀请码</label><input name="referralCode" value="${esc(u.referral_code)}"></div>
@@ -301,9 +310,8 @@ async function openRoomModal(id) {
         <div class="field"><label>日化收益率 下限%</label><input name="dailyYieldMin" type="number" step="0.01" value="${r.dailyYieldMin ?? 0.1}"></div>
         <div class="field"><label>日化收益率 上限%</label><input name="dailyYieldMax" type="number" step="0.01" value="${r.dailyYieldMax ?? 0.5}"></div>
         <div class="field"><label>绩效费 %（交易员分成）</label><input name="performanceFee" type="number" step="0.1" value="${r.performanceFee ?? 10}"></div>
-        <div class="field"><label>客户分成 %</label><input name="customerShare" type="number" step="0.1" value="${r.customerShare ?? 50}"></div>
-        <div class="field"><label>基金池 %（推荐奖励）</label><input name="fundShare" type="number" step="0.1" value="${r.fundShare ?? 40}"></div>
-        <div class="field full" style="font-size:12px;color:#64748b;background:#f1f5f9;padding:8px 12px;border-radius:8px;">💡 日化收益率：系统每天 06:00 在该区间内随机为每位跟单客户结算收益（本金×收益率），收益按「绩效费/客户/基金池」比例自动分配。</div>
+        <div class="field"><label>交易员用户ID（可选）</label><input name="leaderUserId" type="number" value="${r.leaderUserId ?? ''}"></div>
+        <div class="field full" style="font-size:12px;color:#64748b;background:#f1f5f9;padding:8px 12px;border-radius:8px;">💡 日化收益率：系统每天新加坡时间 06:00 为整个房间随机一个统一收益率，房间内所有跟单客户按同一收益率结算；基金池已取消。</div>
         <div class="field"><label>状态</label><select name="status"><option value="active" ${r.status!=='inactive'?'selected':''}>上架</option><option value="inactive" ${r.status==='inactive'?'selected':''}>下架</option></select></div>
         <div class="field full"><label>简介</label><textarea name="description">${esc(r.description)}</textarea></div>
         <div class="field full"><label>历史收益曲线 (JSON数组)</label><textarea name="sparkline" style="min-height:60px;">${esc(sp)}</textarea></div>
@@ -324,7 +332,7 @@ async function saveRoom(id) {
     riskLevel: f.get('riskLevel'), totalProfit: Number(f.get('totalProfit')), yieldRate: Number(f.get('yieldRate')),
     maxDrawdown: Number(f.get('maxDrawdown')), runningDays: Number(f.get('runningDays')), followersCount: Number(f.get('followersCount')),
     totalAum: f.get('totalAum'), winRate: Number(f.get('winRate')), monthlyReturn: Number(f.get('monthlyReturn')),
-    category: f.get('category'), sortOrder: Number(f.get('sortOrder')), isHot: f.get('isHot') === '1', dailyYieldMin: Number(f.get('dailyYieldMin')), dailyYieldMax: Number(f.get('dailyYieldMax')), performanceFee: Number(f.get('performanceFee')), customerShare: Number(f.get('customerShare')), fundShare: Number(f.get('fundShare')),
+    category: f.get('category'), sortOrder: Number(f.get('sortOrder')), isHot: f.get('isHot') === '1', dailyYieldMin: Number(f.get('dailyYieldMin')), dailyYieldMax: Number(f.get('dailyYieldMax')), performanceFee: Number(f.get('performanceFee')), leaderUserId: f.get('leaderUserId') ? Number(f.get('leaderUserId')) : null,
     status: f.get('status'), description: f.get('description'), sparkline, assetDistribution: dist
   };
   try {
@@ -565,6 +573,28 @@ async function loadContent(root) {
           </div>
         </div>
       </div>`;
+  const logoWrap = document.createElement('div');
+  logoWrap.className = 'panel';
+  logoWrap.innerHTML = '<div class="panel-head"><h3>项目 LOGO</h3></div><div class="panel-body"><input id="logoUrlInput" placeholder="上传后自动填入 URL" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;"><input id="logoFileInput" type="file" accept="image/*" style="margin-top:10px"><div id="logoPreviewBox" style="margin-top:10px"></div></div>';
+  root.prepend(logoWrap);
+  const logoItem = items.find(i => i.key === 'app_logo') || { key: 'app_logo', value: '' };
+  $('#logoUrlInput').dataset.k = 'app_logo';
+  $('#logoUrlInput').value = logoItem.value || '';
+  if (logoItem.value) $('#logoPreviewBox').innerHTML = '<img src="' + esc(logoItem.value) + '" style="max-width:120px;max-height:80px;border-radius:8px;border:1px solid var(--line);">';
+  $('#logoFileInput').addEventListener('change', async function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const r = await fetch('/api/admin/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: form });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || '上传失败');
+      $('#logoUrlInput').value = data.url;
+      $('#logoPreviewBox').innerHTML = '<img src="' + esc(data.url) + '" style="max-width:120px;max-height:80px;border-radius:8px;border:1px solid var(--line);">';
+      toast('Logo 已上传，点击保存全部修改后生效');
+    } catch (e) { toast(e.message, 'error'); }
+  });
   } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 async function saveContent() {
@@ -585,13 +615,13 @@ async function loadSettle(root) {
         <div class="stat-card green"><div class="lab">💰 累计结算收益</div><div class="val">${totalProfit.toFixed(2)}</div><div class="sub">共 ${yields.length} 笔</div></div>
         <div class="stat-card accent"><div class="lab">👤 客户所得</div><div class="val">${totalCustomer.toFixed(2)}</div></div>
         <div class="stat-card amber"><div class="lab">🏦 交易员绩效</div><div class="val">${totalTrader.toFixed(2)}</div></div>
-        <div class="stat-card"><div class="lab">🟦 基金池分成</div><div class="val">${totalFund.toFixed(2)}</div></div>
+        
       </div>
       <div class="panel">
         <div class="panel-head"><h3>日化收益结算</h3><button class="btn sm" onclick="manualSettle()">⚡ 立即结算</button></div>
         <div class="panel-body" style="font-size:13px;color:#475569;line-height:1.8;">
-          <div>· 系统每天 <b>06:00</b> 自动为所有运行中的跟单按房间「日化收益率区间」随机结算一次收益；</div>
-          <div>· 分配比例：绩效费（交易员）/ 客户 / 基金池（推荐奖励），由房间设置决定；</div>
+          <div>· 系统每天新加坡时间 <b>06:00</b> 自动为每个房间确定一个统一收益率，并为房间内所有跟单结算；</div>
+          <div>· 分配比例：收益先扣除交易员绩效费，其余全部进入客户可用余额；基金池已取消。</div>
           <div>· 点击「立即结算」可手动触发（幂等：同一跟单每天仅结算一次）。</div>
         </div>
       </div>
@@ -599,13 +629,13 @@ async function loadSettle(root) {
         <div class="panel-head"><h3>收益流水</h3></div>
         <div class="panel-body">
           <div class="table-wrap"><table>
-            <thead><tr><th>ID</th><th>用户</th><th>房间</th><th>本金</th><th>日化收益率</th><th>收益</th><th>交易员</th><th>客户</th><th>基金池</th><th>结算日</th></tr></thead>
+            <thead><tr><th>ID</th><th>用户</th><th>房间</th><th>本金</th><th>当日统一收益率</th><th>收益</th><th>交易员绩效费</th><th>客户到账</th><th>结算日</th></tr></thead>
             <tbody>${yields.map(y => `<tr>
               <td>${y.id}</td><td>${esc(y.uid)}</td><td>${esc(y.room_name)}</td>
               <td>${y.principal}</td><td>${y.yield_rate}%</td><td><b>${Number(y.profit).toFixed(4)}</b></td>
-              <td>${Number(y.trader_share).toFixed(4)}</td><td style="color:var(--green)">${Number(y.customer_share).toFixed(4)}</td><td>${Number(y.fund_share).toFixed(4)}</td>
+              <td>${Number(y.trader_share).toFixed(4)}</td><td style="color:var(--green)">${Number(y.customer_share).toFixed(4)}</td>
               <td>${esc(y.settle_date)}</td>
-            </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无结算记录，点击「立即结算」试试</td></tr>'}</tbody>
+            </tr>`).join('') || '<tr><td colspan="9" class="empty">暂无结算记录，点击「立即结算」试试</td></tr>'}</tbody>
           </table></div>
         </div>
       </div>`;
@@ -725,11 +755,10 @@ async function saveWallet() {
 async function loadTeam(root) {
   try {
     const users = await api('/api/admin/team');
-    const pool = await api('/api/admin/fund-pool');
-    root.innerHTML = `
+      root.innerHTML = `
       <div class="stat-grid">
         <div class="stat-card"><div class="lab">👥 用户总数</div><div class="val">${users.length}</div></div>
-        <div class="stat-card amber"><div class="lab">🏦 平台基金池</div><div class="val">${Number(pool.balance || 0).toFixed(2)}</div></div>
+        <div class="stat-card amber"><div class="lab">🏦 奖励模式</div><div class="val" style="font-size:18px;">直接发放</div><div class="sub">基金池已取消</div></div>
         <div class="stat-card"><div class="lab">👑 L1+ 用户</div><div class="val">${users.filter(u => (u.userLevel||'L0') !== 'L0').length}</div></div>
       </div>
       <div class="panel">
@@ -772,7 +801,7 @@ async function loadSettings(root) {
     <div class="panel" style="max-width:520px;">
       <div class="panel-head"><h3>系统信息</h3></div>
       <div class="panel-body" style="font-size:13px;color:#475569;line-height:1.9;">
-        <div>· 平台名称：EliteTrade 智能量化交易与实体众筹投资平台</div>
+        <div>· 平台名称：盈透copy 智能量化交易与实体众筹投资平台</div>
         <div>· 管理后台路径：/admin</div>
         <div>· 数据存储：SQLite 本地数据库</div>
         <div>· 提示：用户侧前端可通过公开 API（/api/public/*）读取房间、项目、内容与提交充值/提现/实名申请。</div>
@@ -814,5 +843,53 @@ function confirmDialog(message) {
 }
 /* ---------- modal helpers ---------- */
 function closeModal() { $$('.modal-mask').forEach(m => m.remove()); }
+
+async function loadSupport(root) {
+  try {
+    const rows = await api('/api/admin/support-threads');
+    const body = rows.map(function (r) {
+      return '<tr><td>' + r.id + '</td><td>' + esc(r.name || r.uid) + '<br><small>' + esc(r.uid) + '</small></td><td>' + statusPill(r.status) + '</td><td>' + r.message_count + '</td><td>' + fmtDate(r.updated_at) + '</td><td><button class="btn sm" onclick="openSupport(' + r.id + ')">查看回复</button></td></tr>';
+    }).join('');
+    root.innerHTML = '<div class="panel"><div class="panel-head"><h3>客服工单</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>ID</th><th>用户</th><th>状态</th><th>消息数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>' + (body || '<tr><td colspan="6" class="empty">暂无工单</td></tr>') + '</tbody></table></div></div></div><div id="supportDetail"></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+async function openSupport(id) {
+  try {
+    const data = await api('/api/admin/support-threads/' + id + '/messages');
+    const messages = data.messages.map(function (m) {
+      const align = m.sender_type === 'admin' ? 'flex-end' : 'flex-start';
+      const color = m.sender_type === 'admin' ? '#dbeafe' : '#f1f5f9';
+      return '<div style="align-self:' + align + ';max-width:70%;padding:9px 12px;border-radius:10px;background:' + color + ';font-size:13px;">' + esc(m.content) + '</div>';
+    }).join('');
+    $('#supportDetail').innerHTML = '<div class="panel"><div class="panel-head"><h3>工单 #' + id + '</h3></div><div class="panel-body"><div style="max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">' + (messages || '<div class="empty">暂无消息</div>') + '</div><textarea id="supportReply" rows="3" placeholder="输入回复内容" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;"></textarea><button class="btn" style="margin-top:10px" onclick="replySupport(' + id + ')">发送回复</button></div></div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function replySupport(id) {
+  const content = $('#supportReply').value.trim();
+  if (!content) return toast('请输入回复内容', 'error');
+  try { await api('/api/admin/support-threads/' + id + '/reply', { method: 'POST', body: JSON.stringify({ content }) }); toast('回复已发送'); openSupport(id); } catch (e) { toast(e.message, 'error'); }
+}
+async function loadLeads(root) {
+  try {
+    const rows = await api('/api/admin/lead-trader-applications');
+    const body = rows.map(function (r) {
+      const actions = r.status === 'pending' ? '<button class="btn sm" onclick="reviewLead(' + r.id + ',\'approve\')">通过</button> <button class="btn sm ghost" onclick="reviewLead(' + r.id + ',\'reject\')">拒绝</button>' : '已处理';
+      return '<tr><td>' + esc(r.name || r.uid) + '<br><small>' + esc(r.uid) + '</small></td><td>' + esc(r.experience) + '</td><td>' + esc(r.strategy) + '</td><td>' + statusPill(r.status) + '</td><td>' + fmtDate(r.created_at) + '</td><td>' + actions + '</td></tr>';
+    }).join('');
+    root.innerHTML = '<div class="panel"><div class="panel-head"><h3>交易员带单申请</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>用户</th><th>经验</th><th>策略</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' + (body || '<tr><td colspan="6" class="empty">暂无申请</td></tr>') + '</tbody></table></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+async function reviewLead(id, action) {
+  try { await api('/api/admin/lead-trader-applications/' + id + '/review', { method: 'POST', body: JSON.stringify({ action }) }); toast(action === 'approve' ? '申请已通过' : '申请已拒绝'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+async function loadAudit(root) {
+  try {
+    const rows = await api('/api/admin/audit-logs');
+    const body = rows.map(function (r) {
+      return '<tr><td>' + fmtDate(r.created_at) + '</td><td>' + esc(r.actor_id) + '</td><td>' + esc(r.action) + '</td><td>' + esc(r.target_type) + ' #' + esc(r.target_id) + '</td><td style="font-size:12px;">' + esc(r.detail) + '</td></tr>';
+    }).join('');
+    root.innerHTML = '<div class="panel"><div class="panel-head"><h3>后台操作审计日志</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>详情</th></tr></thead><tbody>' + (body || '<tr><td colspan="5" class="empty">暂无日志</td></tr>') + '</tbody></table></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
 
 render();

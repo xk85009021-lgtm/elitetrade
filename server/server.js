@@ -4,17 +4,28 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { db, initDb } from './db.js';
+import { sha256, randomDigits, timingSafeEqualText, generateTotpSecret, verifyTotp, otpauthUrl } from './security.js';
 import QRCode from 'qrcode';
 import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const UPLOAD_DIR = path.join(ROOT, 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(ROOT, 'uploads');
 try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch (e) {}
-const JWT_SECRET = process.env.JWT_SECRET || 'elitetrade-admin-secret-change-me-2026';
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'elitetrade-admin-secret-change-me-2026';
+const USER_JWT_SECRET = process.env.USER_JWT_SECRET || process.env.JWT_SECRET || 'elitetrade-user-secret-change-me-2026';
+const USER_TOKEN_TTL = process.env.USER_TOKEN_TTL || '7d';
+const APP_TZ = process.env.APP_TZ || 'Asia/Singapore';
+const MIN_FOLLOW_DAYS = Math.max(1, Number(process.env.MIN_FOLLOW_DAYS || 7));
 const PORT = process.env.PORT || 8787;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (IS_PRODUCTION && (JWT_SECRET.includes('change-me') || USER_JWT_SECRET.includes('change-me'))) {
+  console.error('FATAL: 生产环境必须配置 ADMIN_JWT_SECRET 和 USER_JWT_SECRET');
+  process.exit(1);
+}
 
 initDb();
 
@@ -23,9 +34,13 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 
 // ---------- helpers ----------
-function auth(req, res, next) {
+function bearerToken(req) {
   const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+  return h.startsWith('Bearer ') ? h.slice(7) : null;
+}
+
+function auth(req, res, next) {
+  const token = bearerToken(req);
   if (!token) return res.status(401).json({ error: '未登录' });
   try {
     req.admin = jwt.verify(token, JWT_SECRET);
@@ -33,6 +48,104 @@ function auth(req, res, next) {
   } catch {
     return res.status(401).json({ error: '登录已过期，请重新登录' });
   }
+}
+
+function createUserSession(user, req) {
+  const jti = crypto.randomUUID();
+  const userAgent = String(req.headers['user-agent'] || '').slice(0, 500);
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  db.prepare('INSERT INTO user_sessions (jti,user_id,user_agent,ip) VALUES (?,?,?,?)').run(jti, user.id, userAgent, ip);
+  return jwt.sign({ sub: user.id, uid: user.uid, jti }, USER_JWT_SECRET, { expiresIn: USER_TOKEN_TTL });
+}
+
+function userAuth(req, res, next) {
+  const token = bearerToken(req);
+  if (!token) return res.status(401).json({ error: '请先登录' });
+  try {
+    const claims = jwt.verify(token, USER_JWT_SECRET);
+    const session = db.prepare('SELECT * FROM user_sessions WHERE jti=? AND revoked_at IS NULL').get(String(claims.jti || ''));
+    if (!session) return res.status(401).json({ error: '登录已失效，请重新登录' });
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(Number(claims.sub));
+    if (!user || user.status === 'frozen') return res.status(401).json({ error: '账户不存在或已冻结' });
+    db.prepare("UPDATE user_sessions SET last_seen_at=datetime('now','localtime') WHERE id=?").run(session.id);
+    req.user = user;
+    req.session = session;
+    next();
+  } catch {
+    return res.status(401).json({ error: '登录已过期，请重新登录' });
+  }
+}
+
+function requireUsableAccount(req, res) {
+  if (req.user.emergency_frozen) {
+    res.status(423).json({ error: '账户处于紧急冻结状态，请先在安全中心解除' });
+    return false;
+  }
+  return true;
+}
+
+function addNotification(userId, title, body, type = 'system') {
+  if (!userId) return;
+  db.prepare('INSERT INTO notifications (user_id,title,body,type) VALUES (?,?,?,?)').run(userId, title, body, type);
+}
+
+function normalizeSqlDate(value) {
+  const raw = String(value || '');
+  if (!raw) return new Date(0).toISOString();
+  if (raw.includes('T')) return raw;
+  return raw.replace(' ', 'T') + '+08:00';
+}
+
+async function deliverResetCode(channel, destination, code, user) {
+  if (channel === 'email') {
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.PASSWORD_RESET_FROM || '盈透copy <noreply@example.com>';
+    if (!key) {
+      if (process.env.PASSWORD_RESET_CODE_IN_RESPONSE === 'true') {
+        console.log('[password-reset]', destination, code);
+        return;
+      }
+      throw new Error('邮件服务未配置，请联系管理员');
+    }
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [destination], subject: '盈透copy 密码重置验证码', html: '<p>您的验证码是 <b>' + code + '</b>，10 分钟内有效。</p>' })
+    });
+    if (!response.ok) throw new Error('邮件发送失败，请稍后重试');
+    return;
+  }
+  const webhook = process.env.SMS_WEBHOOK_URL;
+  if (!webhook) throw new Error('短信服务未配置，请联系管理员');
+  const response = await fetch(webhook, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(process.env.SMS_WEBHOOK_TOKEN ? { Authorization: 'Bearer ' + process.env.SMS_WEBHOOK_TOKEN } : {}) },
+    body: JSON.stringify({ phone: destination, code, purpose: 'password_reset', userId: user.id })
+  });
+  if (!response.ok) throw new Error('短信发送失败，请稍后重试');
+}
+
+function ensureProjectGroup(projectId) {
+  const project = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
+  if (!project) return null;
+  let group = db.prepare('SELECT * FROM groups WHERE project_id=?').get(projectId);
+  if (!group) {
+    const info = db.prepare('INSERT INTO groups (project_id,name) VALUES (?,?)').run(projectId, project.title + ' 股东群');
+    group = db.prepare('SELECT * FROM groups WHERE id=?').get(info.lastInsertRowid);
+  }
+  const investors = db.prepare('SELECT DISTINCT uid,user_id FROM investments WHERE project_id=?').all(projectId);
+  for (const inv of investors) {
+    const user = db.prepare('SELECT * FROM users WHERE uid=?').get(inv.uid);
+    if (user) db.prepare('INSERT OR IGNORE INTO group_members (group_id,uid,user_name) VALUES (?,?,?)').run(group.id, user.uid, user.name);
+  }
+  return group;
+}
+
+function addAudit(actorType, actorId, action, targetType, targetId, detail) {
+  try {
+    db.prepare('INSERT INTO audit_logs (actor_type,actor_id,action,target_type,target_id,detail) VALUES (?,?,?,?,?,?)')
+      .run(actorType, String(actorId || ''), action, targetType || '', String(targetId || ''), detail ? JSON.stringify(detail) : '');
+  } catch (e) {}
 }
 
 function parseTags(s) {
@@ -63,11 +176,22 @@ function toRoom(r) {
     avgLoss: r.avg_loss, lots: r.lots, winTrades: r.win_trades, lossTrades: r.loss_trades,
     assetDistribution: parseArr(r.asset_distribution), category: r.category, isHot: !!r.is_hot,
     dailyYieldMin: r.daily_yield_min, dailyYieldMax: r.daily_yield_max, performanceFee: r.performance_fee, customerShare: r.customer_share, fundShare: r.fund_share,
-    status: r.status, sortOrder: r.sort_order, createdAt: r.created_at
+    status: r.status, sortOrder: r.sort_order, leaderUserId: r.leader_user_id || null, createdAt: r.created_at
   };
 }
 function toUser(u) {
-  return { ...u, kycStatus: u.kyc_status, isVerified: !!u.is_verified, totalAssets: u.total_assets, totalIncome: u.total_income, referrerId: u.referrer_id };
+  if (!u) return null;
+  const { password, twofa_secret, ...safe } = u;
+  return {
+    ...safe,
+    kycStatus: u.kyc_status,
+    isVerified: !!u.is_verified,
+    totalAssets: u.total_assets,
+    totalIncome: u.total_income,
+    referrerId: u.referrer_id,
+    twofaEnabled: !!u.twofa_enabled,
+    emergencyFrozen: !!u.emergency_frozen,
+  };
 }
 const now = () => new Date().toISOString();
 
@@ -78,7 +202,7 @@ app.post('/api/auth/login', (req, res) => {
   if (!admin || !bcrypt.compareSync(String(password || ''), admin.password_hash)) {
     return res.status(401).json({ error: '账号或密码错误' });
   }
-  const token = jwt.sign({ id: admin.id, username: admin.username, role: admin.role }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: admin.id, username: admin.username, role: admin.role }, JWT_SECRET, { expiresIn: '12h' });
   res.json({ token, admin: { id: admin.id, username: admin.username, role: admin.role } });
 });
 
@@ -131,9 +255,13 @@ app.get('/api/users', auth, (req, res) => {
 app.post('/api/users', auth, (req, res) => {
   const b = req.body || {};
   const uid = b.uid || ('10' + String(Math.floor(Math.random() * 900000) + 100000));
+  const rawPassword = String(b.password || '');
+  if (rawPassword.length < 8) return res.status(400).json({ error: '新用户密码至少8位' });
+  const passwordHash = bcrypt.hashSync(rawPassword, 10);
   db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,total_assets,available,total_income,frozen_balance,user_level,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(uid, b.name || '', b.phone || '', b.email || '', String(b.password || ''), Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'L0', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, b.userLevel === 'L0' ? 0 : Number(b.level)||1, b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
-  res.json({ ok: true });
+    .run(uid, b.name || '', b.phone || '', b.email || '', passwordHash, Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'L0', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, b.userLevel === 'L0' ? 0 : Number(b.level)||1, b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
+  addAudit('admin', req.admin.username, 'CREATE_USER', 'user', uid, { uid, name: b.name || '' });
+  res.json({ ok: true, uid });
 });
 
 app.put('/api/users/:id', auth, (req, res) => {
@@ -141,8 +269,12 @@ app.put('/api/users/:id', auth, (req, res) => {
   const b = req.body || {};
   const cur = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!cur) return res.status(404).json({ error: '用户不存在' });
+  const passwordHash = b.password !== undefined && String(b.password) !== ''
+    ? bcrypt.hashSync(String(b.password), 10)
+    : cur.password;
   db.prepare(`UPDATE users SET name=?, phone=?, email=?, password=?, balance=?, total_assets=?, available=?, total_income=?, frozen_balance=?, user_level=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
-    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, b.password !== undefined ? String(b.password) : cur.password, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? (b.userLevel === 'L0' ? 0 : b.userLevel === 'L1' ? 1 : b.userLevel === 'L2' ? 2 : 3) : cur.level, id);
+    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, passwordHash, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? (b.userLevel === 'L0' ? 0 : b.userLevel === 'L1' ? 1 : b.userLevel === 'L2' ? 2 : 3) : cur.level, id);
+  addAudit('admin', req.admin.username, 'UPDATE_USER', 'user', id, { passwordChanged: b.password !== undefined && String(b.password) !== '' });
   res.json({ ok: true });
 });
 
@@ -162,6 +294,7 @@ app.post('/api/rooms', auth, (req, res) => {
   const id = b.id || ('room-' + Date.now().toString(36) + Math.floor(Math.random()*1000).toString(36));
   db.prepare(`INSERT INTO rooms (id,name,english_name,avatar,tags,total_profit,yield_rate,max_drawdown,running_days,followers_count,total_aum,win_rate,risk_level,description,sparkline,monthly_return,avg_daily_return,max_profit_single,max_loss_single,avg_profit,avg_loss,lots,win_trades,loss_trades,asset_distribution,category,is_hot,daily_yield_min,daily_yield_max,performance_fee,customer_share,fund_share,status,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, b.name||'', b.englishName||'', b.avatar||'', JSON.stringify(b.tags||[]), Number(b.totalProfit)||0, Number(b.yieldRate)||0, Number(b.maxDrawdown)||0, Number(b.runningDays)||0, Number(b.followersCount)||0, b.totalAum||'$0', Number(b.winRate)||0, b.riskLevel||'稳健型', b.description||'', JSON.stringify(b.sparkline||[]), Number(b.monthlyReturn)||0, Number(b.avgDailyReturn)||0, Number(b.maxProfitSingle)||0, Number(b.maxLossSingle)||0, Number(b.avgProfit)||0, Number(b.avgLoss)||0, Number(b.lots)||0, Number(b.winTrades)||0, Number(b.lossTrades)||0, JSON.stringify(b.assetDistribution||[]), b.category||'forex', b.isHot?1:0, Number(b.dailyYieldMin)??0.1, Number(b.dailyYieldMax)??0.5, Number(b.performanceFee)??10, Number(b.customerShare)??50, Number(b.fundShare)??40, b.status||'active', Number(b.sortOrder)||0);
+  if (b.leaderUserId !== undefined) db.prepare('UPDATE rooms SET leader_user_id=? WHERE id=?').run(b.leaderUserId ? Number(b.leaderUserId) : null, id);
   res.json({ ok: true, id });
 });
 
@@ -218,25 +351,36 @@ app.get('/api/transactions', auth, (req, res) => {
 
 app.put('/api/transactions/:id/review', auth, (req, res) => {
   const { action, remark } = req.body || {};
-  const t = db.prepare('SELECT * FROM transactions WHERE id = ?').get(req.params.id);
-  if (!t) return res.status(404).json({ error: '记录不存在' });
-  if (action === 'approve') {
-    db.prepare(`UPDATE transactions SET status='approved', reviewed_by=?, reviewed_at=? WHERE id=?`).run(req.admin.username, now(), t.id);
-    // credit/debit user balance
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const run = db.transaction(() => {
+    const t = db.prepare('SELECT * FROM transactions WHERE id = ?').get(req.params.id);
+    if (!t) return { code: 404, error: '记录不存在' };
+    if (t.status !== 'pending') return { code: 409, error: '该申请已处理，不能重复审核' };
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(t.user_id);
-    if (user) {
+    if (!user) return { code: 404, error: '用户不存在' };
+    if (action === 'approve' && t.type === 'withdraw' && Number(t.amount) > Number(user.available || 0)) {
+      return { code: 400, error: '用户可用余额不足，不能通过该提现' };
+    }
+    const status = action === 'approve' ? 'approved' : 'rejected';
+    db.prepare('UPDATE transactions SET status=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=? AND status=?')
+      .run(status, req.admin.username, now(), String(remark || ''), t.id, 'pending');
+    if (action === 'approve') {
       if (t.type === 'deposit') {
         db.prepare('UPDATE users SET balance = balance + ?, total_assets = total_assets + ?, available = available + ? WHERE id = ?').run(t.amount, t.amount, t.amount, user.id);
+        addNotification(user.id, '充值审核通过', '充值 ' + Number(t.amount).toFixed(2) + ' USDT 已到账。', 'deposit');
       } else if (t.type === 'withdraw') {
         db.prepare('UPDATE users SET balance = balance - ?, total_assets = total_assets - ?, available = available - ? WHERE id = ?').run(t.amount, t.amount, t.amount, user.id);
+        addNotification(user.id, '提现审核通过', '提现 ' + Number(t.amount).toFixed(2) + ' USDT 已审核通过。', 'withdraw');
       }
+    } else {
+      addNotification(user.id, t.type === 'deposit' ? '充值审核未通过' : '提现审核未通过', remark || '请联系在线客服了解详情。', t.type);
     }
-  } else if (action === 'reject') {
-    db.prepare(`UPDATE transactions SET status='rejected', reviewed_by=?, reviewed_at=? WHERE id=?`).run(req.admin.username, now(), t.id);
-  } else {
-    return res.status(400).json({ error: '无效操作' });
-  }
-  res.json({ ok: true });
+    addAudit('admin', req.admin.username, 'REVIEW_TRANSACTION_' + action.toUpperCase(), 'transaction', t.id, { type: t.type, amount: t.amount, status });
+    return { ok: true };
+  });
+  const out = run();
+  if (out.error) return res.status(out.code).json({ error: out.error });
+  res.json(out);
 });
 
 // ---------- kyc (实名审核) ----------
@@ -250,19 +394,33 @@ app.get('/api/kyc', auth, (req, res) => {
 });
 
 app.put('/api/kyc/:id/review', auth, (req, res) => {
-  const { action } = req.body || {};
-  const k = db.prepare('SELECT * FROM kyc WHERE id = ?').get(req.params.id);
-  if (!k) return res.status(404).json({ error: '记录不存在' });
-  const newStatus = action === 'approve' ? 'verified' : 'rejected';
-  db.prepare(`UPDATE kyc SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?`).run(newStatus, req.admin.username, now(), k.id);
-  db.prepare(`UPDATE users SET kyc_status=?, is_verified=? WHERE id=?`).run(newStatus === 'verified' ? 'verified' : 'rejected', newStatus === 'verified' ? 1 : 0, k.user_id);
-  let inviteInfo = null;
-  if (action === 'approve') {
+  const { action, remark } = req.body || {};
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const run = db.transaction(() => {
+    const k = db.prepare('SELECT * FROM kyc WHERE id = ?').get(req.params.id);
+    if (!k) return { code: 404, error: '记录不存在' };
+    if (k.status !== 'pending') return { code: 409, error: '该实名申请已处理，不能重复审核' };
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(k.user_id);
-    inviteInfo = grantInviteReward(user);
-    if (user) refreshUserLevel(user.referrer_id);
-  }
-  res.json({ ok: true, inviteReward: inviteInfo ? { amount: inviteInfo.amount, referrer: inviteInfo.referrer.uid } : null });
+    if (!user) return { code: 404, error: '用户不存在' };
+    const newStatus = action === 'approve' ? 'verified' : 'rejected';
+    db.prepare('UPDATE kyc SET status=?, reviewed_by=?, reviewed_at=? WHERE id=? AND status=?')
+      .run(newStatus, req.admin.username, now(), k.id, 'pending');
+    db.prepare('UPDATE users SET kyc_status=?, is_verified=? WHERE id=?')
+      .run(newStatus === 'verified' ? 'verified' : 'rejected', newStatus === 'verified' ? 1 : 0, k.user_id);
+    let inviteInfo = null;
+    if (action === 'approve') {
+      inviteInfo = grantInviteReward(user);
+      refreshUserLevel(user.referrer_id);
+      addNotification(user.id, '实名认证通过', '您的实名认证已审核通过，可以开始跟单。', 'kyc');
+    } else {
+      addNotification(user.id, '实名认证未通过', remark || '请检查资料后重新提交。', 'kyc');
+    }
+    addAudit('admin', req.admin.username, 'REVIEW_KYC_' + action.toUpperCase(), 'kyc', k.id, { userId: user.id });
+    return { ok: true, inviteReward: inviteInfo ? { amount: inviteInfo.amount, referrer: inviteInfo.referrer.uid } : null };
+  });
+  const out = run();
+  if (out.error) return res.status(out.code).json({ error: out.error });
+  res.json(out);
 });
 
 // ---------- commissions (推广收益) ----------
@@ -306,256 +464,432 @@ app.get('/api/public/projects', (req, res) => {
 });
 app.post('/api/public/register', (req, res) => {
   const b = req.body || {};
-  if (!b.phone && !b.email) return res.status(400).json({ error: '请填写手机号或邮箱' });
+  const account = String(b.phone || b.email || '').trim();
+  const password = String(b.password || '');
+  if (!account) return res.status(400).json({ error: '请填写手机号或邮箱' });
+  if (password.length < 8) return res.status(400).json({ error: '密码至少8位' });
+  if (b.phone && db.prepare('SELECT id FROM users WHERE phone=?').get(String(b.phone).trim())) return res.status(409).json({ error: '手机号已注册' });
+  if (b.email && db.prepare('SELECT id FROM users WHERE email=?').get(String(b.email).trim())) return res.status(409).json({ error: '邮箱已注册' });
   const uid = '10' + String(Math.floor(Math.random() * 900000) + 100000);
   const ref = 'ET-' + uid.slice(-6);
   let referrerId = null;
   if (b.referralCode) {
-    const refUser = db.prepare('SELECT * FROM users WHERE referral_code = ?').get(String(b.referralCode).trim());
+    const refUser = db.prepare('SELECT id FROM users WHERE referral_code=?').get(String(b.referralCode).trim());
     if (refUser) referrerId = refUser.id;
   }
+  const passwordHash = bcrypt.hashSync(password, 10);
   db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,referral_code,referrer_id,level,status,kyc_status) VALUES (?,?,?,?,?,0,?,?,1,'active','unverified')`)
-    .run(uid, b.name || '', b.phone || '', b.email || '', b.password || '', ref, referrerId);
-  res.json({ ok: true, uid });
-});
-app.post('/api/public/deposit', (req, res) => {
-  const b = req.body || {};
-  const txn = 'TXN-' + Date.now() + Math.floor(Math.random()*1000);
-  const user = b.uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(String(b.uid)) : null;
-  const userId = user ? user.id : (b.userId || 0);
-  const userName = user ? user.name : (b.userName || '');
-  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(txn, userId, userName, 'deposit', Number(b.amount)||0, b.network || 'USDT-TRC20', b.address || '', 'USDT Deposit', '充值待确认', 'pending', new Date().toISOString().slice(0,10), new Date().toTimeString().slice(0,5));
-  res.json({ ok: true, txn });
-});
-app.post('/api/public/withdraw', (req, res) => {
-  const b = req.body || {};
-  const txn = 'TXN-' + Date.now() + Math.floor(Math.random()*1000);
-  const user = b.uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(String(b.uid)) : null;
-  const amount = Number(b.amount) || 0;
-  // 45天提现规则：跟单45天内仅可提现累计本金
-  if (user) {
-    const earliestFollow = db.prepare("SELECT MIN(created_at) m FROM follows WHERE uid = ? AND status='active'").get(user.uid);
-    if (earliestFollow && earliestFollow.m) {
-      const ageDays = (Date.now() - new Date(earliestFollow.m).getTime()) / 86400000;
-      if (ageDays < 45) {
-        const totalPrincipal = db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE uid=? AND status='active'").get(user.uid).s;
-        const totalWithdrawn = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE user_id=? AND type='withdraw' AND status='approved'").get(user.id).s;
-        if (totalWithdrawn + amount > totalPrincipal) {
-          return res.status(400).json({ error: '按跟单协议：45天内仅可提现累计本金，收益将于45天后开放提现' });
-        }
-      }
-    }
-  }
-  const userId = user ? user.id : (b.userId || 0);
-  const userName = user ? user.name : (b.userName || '');
-  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(txn, userId, userName, 'withdraw', amount, b.network || 'USDT-TRC20', b.address || '', 'USDT Withdraw', '提现待审核', 'pending', new Date().toISOString().slice(0,10), new Date().toTimeString().slice(0,5));
-  res.json({ ok: true, txn });
-});
-app.post('/api/public/kyc', (req, res) => {
-  const b = req.body || {};
-  const user = b.uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(String(b.uid)) : null;
-  const userId = user ? user.id : (b.userId || 0);
-  const userName = user ? user.name : (b.userName || '');
-  db.prepare(`INSERT INTO kyc (user_id,user_name,kyc_type,id_number,real_name,front_image,back_image,handheld_image,status) VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(userId, userName, b.kycType || '身份证', b.idNumber || '', b.realName || '', b.frontImage || '', b.backImage || '', b.handheldImage || '', 'pending');
-  res.json({ ok: true });
+    .run(uid, String(b.name || '').trim(), String(b.phone || '').trim(), String(b.email || '').trim(), passwordHash, ref, referrerId);
+  const user = db.prepare('SELECT * FROM users WHERE uid=?').get(uid);
+  const token = createUserSession(user, req);
+  addNotification(user.id, '欢迎使用盈透copy', '账户已创建，请完成实名认证后开始跟单。', 'account');
+  res.json({ ok: true, uid, token, user: toUser(user) });
 });
 
-
-// ---------- public API: user session / follow / transactions ----------
 app.post('/api/public/login', (req, res) => {
   const b = req.body || {};
   const key = String(b.account || '').trim();
   const pwd = String(b.password || '');
-  if (!key) return res.status(400).json({ error: '请输入账号' });
-  const user = db.prepare('SELECT * FROM users WHERE phone = ? OR email = ? OR uid = ?').get(key, key, key);
-  if (!user) return res.status(404).json({ error: '账号不存在' });
-  if (user.password && user.password !== pwd) return res.status(401).json({ error: '密码错误' });
+  if (!key || !pwd) return res.status(400).json({ error: '请输入账号和密码' });
+  const user = db.prepare('SELECT * FROM users WHERE phone=? OR email=? OR uid=?').get(key, key, key);
+  if (!user) return res.status(401).json({ error: '账号或密码错误' });
   if (user.status === 'frozen') return res.status(403).json({ error: '账号已被冻结' });
-  res.json({ ok: true, user: toUser(user) });
+  if (!user.password || !bcrypt.compareSync(pwd, user.password)) return res.status(401).json({ error: '账号或密码错误' });
+  if (user.twofa_enabled) {
+    const code = String(b.totpCode || '');
+    if (!code) return res.json({ ok: false, requires2fa: true, message: '请输入谷歌验证器动态验证码' });
+    if (!verifyTotp(user.twofa_secret, code)) return res.status(401).json({ error: '动态验证码错误' });
+  }
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  db.prepare('UPDATE users SET last_login_at=?, last_login_ip=? WHERE id=?').run(now(), ip, user.id);
+  const token = createUserSession(user, req);
+  res.json({ ok: true, token, user: toUser(user) });
 });
 
-app.get('/api/public/user', (req, res) => {
-  const uid = String(req.query.uid || '');
-  const id = Number(req.query.id || 0);
-  let user = null;
-  if (uid) user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
-  else if (id) user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  if (!user) return res.status(404).json({ error: '用户不存在' });
-  res.json({ ok: true, user: toUser(user) });
-});
-
-app.get('/api/public/transactions', (req, res) => {
-  const uid = String(req.query.uid || '');
-  const id = Number(req.query.id || 0);
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  if (!user) return res.json([]);
-  const rows = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC').all(user.id);
-  res.json(rows.map(t => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, title: t.title, subtitle: t.subtitle, status: t.status, createdAt: t.created_at })));
-});
-
-app.post('/api/public/follow', (req, res) => {
-  const b = req.body || {};
-  const uid = String(b.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  if (!user) return res.status(404).json({ error: '请先登录' });
-  if ((user.kyc_status || '') !== 'verified') return res.status(403).json({ error: '请先完成实名认证（KYC）后再开启跟单' });
-  const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(String(b.roomId || ''));
-  if (!room) return res.status(404).json({ error: '房间不存在' });
-  const allocated = Number(b.amount) || 0;
-  const stopLoss = Math.max(0, Math.min(99, Number(b.stopLoss) || 0));
-  if (allocated > (user.available || 0)) return res.status(400).json({ error: '可用资金不足' });
-  db.prepare('UPDATE users SET available = available - ?, total_assets = total_assets - ? WHERE id = ?').run(allocated, allocated, user.id);
-  db.prepare('UPDATE rooms SET followers_count = followers_count + 1 WHERE id = ?').run(room.id);
-  const st = db.prepare('INSERT INTO follows (uid, user_id, room_id, room_name, avatar, allocated, status, stop_loss, equity, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
-  st.run(uid, user.id, room.id, room.name, room.avatar, allocated, 'active', stopLoss, allocated, new Date().toISOString());
-  // 被邀请用户参与跟单 → 解冻推荐人邀请奖励进可用余额
-  unlockInviteRewards(user);
-  refreshUserLevel(user.id);
+app.post('/api/public/logout', userAuth, (req, res) => {
+  db.prepare("UPDATE user_sessions SET revoked_at=datetime('now','localtime') WHERE id=?").run(req.session.id);
   res.json({ ok: true });
 });
 
-app.get('/api/public/follows', (req, res) => {
-  const uid = String(req.query.uid || '');
-  if (!uid) return res.json([]);
-  const rows = db.prepare('SELECT * FROM follows WHERE uid = ? ORDER BY id DESC').all(uid);
-  res.json(rows.map(f => ({ id: f.id, roomId: f.room_id, roomName: f.room_name, avatar: f.avatar, allocated: f.allocated, status: f.status, stopLoss: f.stop_loss, stopTriggered: !!f.stop_triggered, equity: f.equity || f.allocated, createdAt: f.created_at, currentPnL: Math.round(((f.equity || f.allocated) - (f.allocated || 0)) * 100) / 100 })));
+app.post('/api/public/password/reset/request', async (req, res) => {
+  const channel = String((req.body || {}).channel || 'email');
+  const account = String((req.body || {}).account || '').trim();
+  if (!['email', 'phone'].includes(channel) || !account) return res.status(400).json({ error: '参数错误' });
+  const user = db.prepare(channel === 'email' ? 'SELECT * FROM users WHERE email=?' : 'SELECT * FROM users WHERE phone=?').get(account);
+  if (!user) return res.status(404).json({ error: '账号不存在' });
+  const code = randomDigits(6);
+  const codeHash = bcrypt.hashSync(code, 8);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  db.prepare('UPDATE password_reset_codes SET used_at=? WHERE user_id=? AND used_at IS NULL').run(now(), user.id);
+  db.prepare('INSERT INTO password_reset_codes (user_id,channel,destination,code_hash,expires_at) VALUES (?,?,?,?,?)').run(user.id, channel, account, codeHash, expiresAt);
+  try {
+    await deliverResetCode(channel, account, code, user);
+  } catch (e) {
+    return res.status(503).json({ error: e.message || '验证码发送服务未配置' });
+  }
+  res.json({ ok: true, expiresIn: 600, delivery: channel === 'email' ? '邮箱' : '短信' });
 });
 
-app.put('/api/public/follows/:id/pause', (req, res) => {
-  const f = db.prepare('SELECT * FROM follows WHERE id = ?').get(req.params.id);
+app.post('/api/public/password/reset/confirm', (req, res) => {
+  const b = req.body || {};
+  const channel = String(b.channel || 'email');
+  const account = String(b.account || '').trim();
+  const code = String(b.code || '').trim();
+  const newPassword = String(b.newPassword || '');
+  if (newPassword.length < 8) return res.status(400).json({ error: '新密码至少8位' });
+  const user = db.prepare(channel === 'email' ? 'SELECT * FROM users WHERE email=?' : 'SELECT * FROM users WHERE phone=?').get(account);
+  if (!user) return res.status(404).json({ error: '账号不存在' });
+  const row = db.prepare('SELECT * FROM password_reset_codes WHERE user_id=? AND channel=? AND destination=? AND used_at IS NULL ORDER BY id DESC LIMIT 1').get(user.id, channel, account);
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取' });
+  if (Number(row.attempts || 0) >= 5) return res.status(429).json({ error: '验证码尝试次数过多，请重新获取' });
+  if (!bcrypt.compareSync(code, row.code_hash)) {
+    db.prepare('UPDATE password_reset_codes SET attempts=attempts+1 WHERE id=?').run(row.id);
+    return res.status(401).json({ error: '验证码错误' });
+  }
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(newPassword, 10), user.id);
+    db.prepare('UPDATE password_reset_codes SET used_at=? WHERE id=?').run(now(), row.id);
+    db.prepare("UPDATE user_sessions SET revoked_at=datetime('now','localtime') WHERE user_id=? AND revoked_at IS NULL").run(user.id);
+    addNotification(user.id, '登录密码已重置', '您的登录密码已更新，所有旧会话已下线。', 'security');
+  });
+  tx();
+  res.json({ ok: true });
+});
+
+app.get('/api/public/user', userAuth, (req, res) => res.json({ ok: true, user: toUser(req.user) }));
+app.get('/api/public/transactions', userAuth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC').all(req.user.id);
+  res.json(rows.map((t) => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, title: t.title, subtitle: t.subtitle, status: t.status, reviewNote: t.review_note, createdAt: t.created_at })));
+});
+
+app.post('/api/public/deposit', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const b = req.body || {};
+  const amount = Number(b.amount || 0);
+  if (amount <= 0) return res.status(400).json({ error: '充值金额无效' });
+  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
+  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(txn, req.user.id, req.user.name, 'deposit', amount, b.network || 'USDT-TRC20', b.address || '', 'USDT Deposit', '充值待确认', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5));
+  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核。', 'deposit');
+  res.json({ ok: true, txn });
+});
+
+app.post('/api/public/withdraw', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const b = req.body || {};
+  const amount = Number(b.amount || 0);
+  const user = req.user;
+  if (amount < 10) return res.status(400).json({ error: '最低提现金额为 10 USDT' });
+  if (amount > Number(user.available || 0)) return res.status(400).json({ error: '提现金额超过可用余额' });
+  if (!String(b.address || '').trim()) return res.status(400).json({ error: '请填写提现地址' });
+  const earliestFollow = db.prepare("SELECT MIN(created_at) m FROM follows WHERE user_id=? AND status='active'").get(user.id);
+  if (earliestFollow && earliestFollow.m) {
+    const ageDays = (Date.now() - new Date(normalizeSqlDate(earliestFollow.m)).getTime()) / 86400000;
+    if (ageDays < MIN_FOLLOW_DAYS) {
+      const totalPrincipal = db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE user_id=? AND status='active'").get(user.id).s;
+      const totalWithdrawn = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE user_id=? AND type='withdraw' AND status='approved'").get(user.id).s;
+      if (totalWithdrawn + amount > totalPrincipal) {
+        return res.status(400).json({ error: '跟单未满 ' + MIN_FOLLOW_DAYS + ' 天：仅可累计提现跟单本金，收益到期后开放' });
+      }
+    }
+  }
+  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
+  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(txn, user.id, user.name, 'withdraw', amount, b.network || 'USDT-TRC20', b.address, 'USDT Withdraw', '提现待审核', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5));
+  addNotification(user.id, '提现申请已提交', '提现 ' + amount.toFixed(2) + ' USDT 正在等待后台审核。', 'withdraw');
+  res.json({ ok: true, txn });
+});
+
+app.post('/api/public/kyc', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const b = req.body || {};
+  if (!String(b.realName || '').trim() || !String(b.idNumber || '').trim()) return res.status(400).json({ error: '真实姓名和证件号码不能为空' });
+  const pending = db.prepare("SELECT id FROM kyc WHERE user_id=? AND status='pending'").get(req.user.id);
+  if (pending) return res.status(409).json({ error: '已有待审核的实名申请，请勿重复提交' });
+  db.prepare(`INSERT INTO kyc (user_id,user_name,kyc_type,id_number,real_name,front_image,back_image,handheld_image,status) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(req.user.id, req.user.name, b.kycType || '身份证', b.idNumber, b.realName, b.frontImage || '', b.backImage || '', b.handheldImage || '', 'pending');
+  addNotification(req.user.id, '实名申请已提交', '资料正在等待后台审核。', 'kyc');
+  res.json({ ok: true });
+});
+
+app.post('/api/public/follow', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const b = req.body || {};
+  const user = req.user;
+  if ((user.kyc_status || '') !== 'verified') return res.status(403).json({ error: '请先完成实名认证（KYC）后再开启跟单' });
+  const room = db.prepare("SELECT * FROM rooms WHERE id=? AND status='active'").get(String(b.roomId || ''));
+  if (!room) return res.status(404).json({ error: '房间不存在或已下架' });
+  const allocated = Number(b.amount || 0);
+  const stopLoss = Math.max(0, Math.min(99, Number(b.stopLoss) || 0));
+  if (allocated <= 0) return res.status(400).json({ error: '跟单金额无效' });
+  if (allocated > Number(user.available || 0)) return res.status(400).json({ error: '可用资金不足' });
+  const lockUntil = new Date(Date.now() + MIN_FOLLOW_DAYS * 86400000).toISOString();
+  const tx = db.transaction(() => {
+    const fresh = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
+    if (allocated > Number(fresh.available || 0)) throw new Error('可用资金不足');
+    db.prepare('UPDATE users SET available=available-?, total_assets=balance WHERE id=?').run(allocated, user.id);
+    db.prepare('UPDATE rooms SET followers_count=followers_count+1 WHERE id=?').run(room.id);
+    db.prepare('INSERT INTO follows (uid,user_id,room_id,room_name,avatar,allocated,status,stop_loss,equity,lock_until,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .run(user.uid, user.id, room.id, room.name, room.avatar, allocated, 'active', stopLoss, allocated, lockUntil, now());
+    unlockInviteRewards(user);
+    refreshUserLevel(user.id);
+    addNotification(user.id, '跟单已开启', '已跟随 ' + room.name + '，投入 ' + allocated.toFixed(2) + ' USDT，最低跟单周期 ' + MIN_FOLLOW_DAYS + ' 天。', 'follow');
+  });
+  try { tx(); } catch (e) { return res.status(400).json({ error: e.message }); }
+  res.json({ ok: true, lockUntil, minDays: MIN_FOLLOW_DAYS });
+});
+
+app.get('/api/public/follows', userAuth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM follows WHERE user_id=? ORDER BY id DESC').all(req.user.id);
+  res.json(rows.map((f) => {
+    const unlockAt = f.lock_until || f.created_at;
+    const unlockMs = new Date(normalizeSqlDate(unlockAt)).getTime();
+    return { id: f.id, roomId: f.room_id, roomName: f.room_name, avatar: f.avatar, allocated: f.allocated, status: f.status, stopLoss: f.stop_loss, stopTriggered: !!f.stop_triggered, equity: f.equity || f.allocated, createdAt: f.created_at, lockUntil: f.lock_until, canExit: Date.now() >= unlockMs, remainingLockDays: Math.max(0, Math.ceil((unlockMs - Date.now()) / 86400000)), currentPnL: Math.round(((f.equity || f.allocated) - (f.allocated || 0)) * 100) / 100 };
+  }));
+});
+
+app.put('/api/public/follows/:id/pause', userAuth, (req, res) => {
+  const f = db.prepare('SELECT * FROM follows WHERE id=? AND user_id=?').get(req.params.id, req.user.id);
   if (!f) return res.status(404).json({ error: '记录不存在' });
+  if (f.status === 'ended') return res.status(400).json({ error: '该跟单已结束' });
   const next = f.status === 'paused' ? 'active' : 'paused';
-  db.prepare('UPDATE follows SET status = ? WHERE id = ?').run(next, f.id);
+  db.prepare('UPDATE follows SET status=? WHERE id=?').run(next, f.id);
   res.json({ ok: true, status: next });
 });
 
-// 止损：确认结束跟单（剩余权益退回可用余额）
-app.put('/api/public/follows/:id/stop', (req, res) => {
-  const f = db.prepare('SELECT * FROM follows WHERE id = ?').get(req.params.id);
+app.put('/api/public/follows/:id/stop', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const f = db.prepare('SELECT * FROM follows WHERE id=? AND user_id=?').get(req.params.id, req.user.id);
   if (!f) return res.status(404).json({ error: '记录不存在' });
-  if (f.status !== 'active') return res.status(400).json({ error: '该跟单已结束' });
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(f.user_id);
-  const refund = Number((f.equity || f.allocated).toFixed(4));
-  if (user && refund > 0) {
-    db.prepare('UPDATE users SET available = available + ?, balance = balance + ?, total_assets = total_assets + ? WHERE id = ?').run(refund, refund, refund, user.id);
+  if (f.status === 'ended') return res.status(400).json({ error: '该跟单已结束' });
+  const unlockMs = new Date(normalizeSqlDate(f.lock_until || f.created_at)).getTime();
+  if (Date.now() < unlockMs) {
+    return res.status(423).json({ error: '进入跟单房间后最低 ' + MIN_FOLLOW_DAYS + ' 天才能退出，剩余 ' + Math.max(1, Math.ceil((unlockMs - Date.now()) / 86400000)) + ' 天' });
   }
-  db.prepare("UPDATE follows SET status='ended', stop_triggered=0, ended_at=datetime('now','localtime') WHERE id=?").run(f.id);
+  const tx = db.transaction(() => {
+    const fresh = db.prepare('SELECT * FROM follows WHERE id=?').get(f.id);
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(f.user_id);
+    const refund = Number((fresh.equity || fresh.allocated || 0).toFixed(4));
+    if (refund > 0) db.prepare('UPDATE users SET available=available+?, total_assets=balance WHERE id=?').run(refund, user.id);
+    db.prepare("UPDATE follows SET status='ended', stop_triggered=0, ended_at=datetime('now','localtime'), closed_reason=? WHERE id=?").run('manual', f.id);
+    db.prepare('UPDATE rooms SET followers_count=MAX(0,followers_count-1) WHERE id=?').run(f.room_id);
+    addNotification(user.id, '跟单已结束', f.room_name + ' 的剩余权益 ' + refund.toFixed(2) + ' USDT 已释放到可用余额。', 'follow');
+    return refund;
+  });
+  const refund = tx();
   res.json({ ok: true, refund });
 });
 
-// 止损：取消（继续跟单分红）
-app.put('/api/public/follows/:id/continue', (req, res) => {
-  const f = db.prepare('SELECT * FROM follows WHERE id = ?').get(req.params.id);
+app.put('/api/public/follows/:id/continue', userAuth, (req, res) => {
+  const f = db.prepare('SELECT * FROM follows WHERE id=? AND user_id=?').get(req.params.id, req.user.id);
   if (!f) return res.status(404).json({ error: '记录不存在' });
-  db.prepare('UPDATE follows SET stop_triggered = 0 WHERE id = ?').run(f.id);
+  db.prepare('UPDATE follows SET stop_triggered=0 WHERE id=?').run(f.id);
   res.json({ ok: true });
 });
 
-
-// ---------- public API: quotes / referral / profile / overview / invest ----------
 app.get('/api/public/quotes', (req, res) => {
-  res.json(db.prepare('SELECT symbol, name, price, ask_price as askPrice, change_percent as change, category FROM quotes ORDER BY category, symbol').all());
+  res.json(db.prepare('SELECT symbol,name,price,ask_price as askPrice,change_percent as change,category,updated_at FROM quotes ORDER BY category,symbol').all());
 });
 
-app.get('/api/public/referral', (req, res) => {
-  const uid = String(req.query.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  if (!user) return res.status(404).json({ error: '请先登录' });
-  const rates = db.prepare('SELECT level, rate FROM commission_rates ORDER BY level').all();
-  const team = db.prepare('SELECT COUNT(*) c FROM users WHERE referrer_id = ?').get(user.id).c;
-  const commissions = db.prepare('SELECT * FROM commissions WHERE user_id = ? ORDER BY id DESC LIMIT 20').all(user.id);
-  const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id = ?').get(user.id).s;
+app.get('/api/public/referral', userAuth, (req, res) => {
+  const user = req.user;
+  const rates = db.prepare('SELECT level,rate FROM commission_rates ORDER BY level').all();
+  const team = db.prepare('SELECT COUNT(*) c FROM users WHERE referrer_id=?').get(user.id).c;
+  const commissions = db.prepare('SELECT * FROM commissions WHERE user_id=? ORDER BY id DESC LIMIT 20').all(user.id);
+  const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id=?').get(user.id).s;
   const metrics = computeMetrics(user.id);
   const frozen = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM invite_rewards WHERE referrer_uid=? AND status='frozen'").get(user.uid).s;
-  const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid = ? ORDER BY id DESC LIMIT 50').all(user.uid);
-  const teamRewards = db.prepare('SELECT * FROM team_rewards WHERE uid = ? ORDER BY id DESC LIMIT 50').all(user.uid);
+  const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
+  const teamRewards = db.prepare('SELECT * FROM team_rewards WHERE uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
   const levelInfo = LEVEL_RULES[metrics.level];
-  res.json({
-    code: user.referral_code,
-    userLevel: metrics.level,
-    levelRule: levelInfo,
-    directVerified: metrics.directVerified,
-    teamVolume: metrics.volume,
-    frozenInviteRewards: frozen,
-    inviteRewards: inviteRewards.map(i => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })),
-    teamRewards: teamRewards.map(t => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })),
-    teamSize: team,
-    totalCommission,
-    rates: rates.map(r => ({ level: r.level, rate: r.rate })),
-    commissions: commissions.map(c2 => ({ id: c2.id, level: c2.level, amount: c2.amount, rate: c2.rate, orderId: c2.order_id, createdAt: c2.created_at }))
-  });
+  res.json({ code: user.referral_code, userLevel: metrics.level, levelRule: levelInfo, directVerified: metrics.directVerified, teamVolume: metrics.volume, frozenInviteRewards: frozen, inviteRewards: inviteRewards.map((i) => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })), teamRewards: teamRewards.map((t) => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })), teamSize: team, totalCommission, rates: rates.map((r) => ({ level: r.level, rate: r.rate })), commissions: commissions.map((c2) => ({ id: c2.id, level: c2.level, amount: c2.amount, rate: c2.rate, orderId: c2.order_id, createdAt: c2.created_at })) });
 });
 
-app.put('/api/public/user/update', (req, res) => {
+app.put('/api/public/user/update', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
   const b = req.body || {};
-  const uid = String(b.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  if (!user) return res.status(404).json({ error: '请先登录' });
-  db.prepare('UPDATE users SET name=?, email=?, phone=?, avatar=? WHERE id=?')
-    .run(b.name ?? user.name, b.email ?? user.email, b.phone ?? user.phone, (b.avatar ?? user.avatar) || '', user.id);
-  res.json({ ok: true, user: toUser(db.prepare('SELECT * FROM users WHERE id = ?').get(user.id)) });
+  const name = String(b.name ?? req.user.name ?? '').trim();
+  const email = String(b.email ?? req.user.email ?? '').trim();
+  const phone = String(b.phone ?? req.user.phone ?? '').trim();
+  if (!name) return res.status(400).json({ error: '姓名不能为空' });
+  if (email && db.prepare('SELECT id FROM users WHERE email=? AND id<>?').get(email, req.user.id)) return res.status(409).json({ error: '邮箱已被使用' });
+  if (phone && db.prepare('SELECT id FROM users WHERE phone=? AND id<>?').get(phone, req.user.id)) return res.status(409).json({ error: '手机号已被使用' });
+  db.prepare('UPDATE users SET name=?,email=?,phone=?,avatar=? WHERE id=?').run(name, email, phone, String(b.avatar ?? req.user.avatar ?? ''), req.user.id);
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  res.json({ ok: true, user: toUser(user) });
 });
 
-app.get('/api/public/overview', (req, res) => {
-  const uid = String(req.query.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  if (!user) return res.status(404).json({ error: '请先登录' });
-  const follows = db.prepare('SELECT * FROM follows WHERE uid = ?').all(uid);
-  const investments = db.prepare('SELECT * FROM investments WHERE uid = ?').all(uid);
-  const txns = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 50').all(user.id);
-  const myCopyAlloc = follows.reduce((s, f) => s + (f.allocated || 0), 0);
-  const myCopyPnl = follows.reduce((s, f) => s + Math.round((f.allocated || 0) * 0.124), 0);
-  const myInvest = investments.reduce((s, i) => s + (i.amount || 0), 0);
-  const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id = ?').get(user.id).s;
-  res.json({
-    user: toUser(user),
-    stats: {
-      totalAssets: user.total_assets,
-      balance: user.balance,
-      frozenBalance: user.frozen_balance || 0,
-      userLevel: user.user_level || 'L0',
-      available: user.available,
-      totalIncome: user.total_income,
-      myCopyAlloc,
-      myCopyPnl,
-      myInvest,
-      commission,
-      followCount: follows.length,
-      investCount: investments.length,
-      todayProfit: 0
-    },
-    follows: follows.map(f => ({ id: f.id, roomId: f.room_id, roomName: f.room_name, avatar: f.avatar, allocated: f.allocated, status: f.status, createdAt: f.created_at, currentPnL: Math.round((f.allocated || 0) * 0.124) })),
-    investments: investments.map(i => ({ id: i.id, projectId: i.project_id, projectTitle: i.project_title, amount: i.amount, status: i.status, createdAt: i.created_at })),
-    transactions: txns.map(t => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, title: t.title, subtitle: t.subtitle, status: t.status, createdAt: t.created_at }))
-  });
+app.get('/api/public/overview', userAuth, (req, res) => {
+  const user = req.user;
+  const follows = db.prepare('SELECT * FROM follows WHERE user_id=?').all(user.id);
+  const investments = db.prepare('SELECT * FROM investments WHERE user_id=?').all(user.id);
+  const myCopyAlloc = follows.filter((f) => f.status === 'active').reduce((sum, f) => sum + Number(f.allocated || 0), 0);
+  const myCopyPnl = follows.reduce((sum, f) => sum + (Number(f.equity || f.allocated || 0) - Number(f.allocated || 0)), 0);
+  const myInvest = investments.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id=?').get(user.id).s;
+  const todayProfit = db.prepare('SELECT COALESCE(SUM(customer_share),0) s FROM yield_records WHERE uid=? AND settle_date=?').get(user.uid, businessDate()).s;
+  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, userLevel: user.user_level || 'L0', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
 });
 
-app.post('/api/public/invest', (req, res) => {
+app.post('/api/public/invest', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
   const b = req.body || {};
-  const uid = String(b.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  if (!user) return res.status(404).json({ error: '请先登录' });
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(String(b.projectId || ''));
-  if (!project) return res.status(404).json({ error: '项目不存在' });
-  const amount = Number(b.amount) || 0;
-  if (amount <= 0) return res.status(400).json({ error: '金额无效' });
-  db.prepare('INSERT INTO investments (uid, user_id, project_id, project_title, amount) VALUES (?,?,?,?,?)')
-    .run(uid, user.id, project.id, project.title, amount);
-  // 自动建群/入群：项目融资进度达到 100% 时自动生成股东群
-  const invested = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM investments WHERE project_id = ?').get(project.id).s;
-  const target = parseFloat(String(project.target_amount || '0').replace(/[^0-9.]/g, '')) || 0;
-  const progress = target > 0 ? Math.min(100, Math.round(invested / target * 1000) / 10) : project.progress;
-  db.prepare('UPDATE projects SET progress = ? WHERE id = ?').run(progress, project.id);
-  if (progress >= 100) {
-    const grp = ensureProjectGroup(project.id);
-    if (grp) db.prepare('INSERT OR IGNORE INTO group_members (group_id,uid,user_name) VALUES (?,?,?)').run(grp.id, uid, user.name);
+  const project = db.prepare("SELECT * FROM projects WHERE id=? AND status='active'").get(String(b.projectId || ''));
+  if (!project) return res.status(404).json({ error: '项目不存在或已下架' });
+  const amount = Number(b.amount || 0);
+  if (amount < Number(project.min_investment || 0)) return res.status(400).json({ error: '低于项目最低投资金额' });
+  if (amount > Number(req.user.available || 0)) return res.status(400).json({ error: '可用余额不足' });
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE users SET balance=balance-?,available=available-?,total_assets=balance-? WHERE id=?').run(amount, amount, amount, req.user.id);
+    db.prepare('INSERT INTO investments (uid,user_id,project_id,project_title,amount) VALUES (?,?,?,?,?)').run(req.user.uid, req.user.id, project.id, project.title, amount);
+    const invested = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM investments WHERE project_id=?').get(project.id).s;
+    const target = parseFloat(String(project.target_amount || '0').replace(/[^0-9.]/g, '')) || 0;
+    const progress = target > 0 ? Math.min(100, Math.round(invested / target * 1000) / 10) : project.progress;
+    db.prepare('UPDATE projects SET progress=? WHERE id=?').run(progress, project.id);
+    if (progress >= 100) {
+      const grp = ensureProjectGroup(project.id);
+      if (grp) db.prepare('INSERT OR IGNORE INTO group_members (group_id,uid,user_name) VALUES (?,?,?)').run(grp.id, req.user.uid, req.user.name);
+    }
+    addNotification(req.user.id, '众筹认购成功', project.title + ' 认购 ' + amount.toFixed(2) + ' USDT 已入账。', 'invest');
+    return { groupCreated: progress >= 100, progress };
+  });
+  const out = tx();
+  res.json({ ok: true, ...out });
+});
+
+// ---------- user security, notifications, support and lead trader ----------
+app.get('/api/public/notifications', userAuth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user.id));
+});
+app.put('/api/public/notifications/:id/read', userAuth, (req, res) => {
+  db.prepare('UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?').run(req.params.id, req.user.id);
+  res.json({ ok: true });
+});
+app.put('/api/public/notifications/read-all', userAuth, (req, res) => {
+  db.prepare('UPDATE notifications SET is_read=1 WHERE user_id=?').run(req.user.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/public/security/password', userAuth, (req, res) => {
+  const b = req.body || {};
+  const oldPassword = String(b.oldPassword || '');
+  const newPassword = String(b.newPassword || '');
+  if (!bcrypt.compareSync(oldPassword, req.user.password)) return res.status(401).json({ error: '原密码错误' });
+  if (newPassword.length < 8) return res.status(400).json({ error: '新密码至少8位' });
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(newPassword, 10), req.user.id);
+    db.prepare("UPDATE user_sessions SET revoked_at=datetime('now','localtime') WHERE user_id=? AND jti<>? AND revoked_at IS NULL").run(req.user.id, req.session.jti);
+    addNotification(req.user.id, '登录密码已修改', '其他设备会话已全部下线。', 'security');
+  });
+  tx();
+  res.json({ ok: true });
+});
+
+app.get('/api/public/security/sessions', userAuth, (req, res) => {
+  const rows = db.prepare("SELECT id,jti,user_agent,ip,created_at,last_seen_at FROM user_sessions WHERE user_id=? AND revoked_at IS NULL ORDER BY id DESC").all(req.user.id);
+  res.json(rows.map((r) => ({ ...r, current: r.jti === req.session.jti })));
+});
+app.delete('/api/public/security/sessions/:id', userAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM user_sessions WHERE id=? AND user_id=?').get(req.params.id, req.user.id);
+  if (!row) return res.status(404).json({ error: '会话不存在' });
+  if (row.jti === req.session.jti) return res.status(400).json({ error: '不能移除当前会话' });
+  db.prepare("UPDATE user_sessions SET revoked_at=datetime('now','localtime') WHERE id=?").run(row.id);
+  res.json({ ok: true });
+});
+
+app.post('/api/public/security/2fa/setup', userAuth, async (req, res) => {
+  if (req.user.twofa_enabled) return res.status(409).json({ error: '双重验证已启用' });
+  const secret = generateTotpSecret();
+  db.prepare('UPDATE users SET twofa_secret=?,twofa_enabled=0 WHERE id=?').run(secret, req.user.id);
+  const url = otpauthUrl(secret, req.user.email || req.user.phone || req.user.uid, '盈透copy');
+  const qr = await QRCode.toDataURL(url);
+  res.json({ ok: true, secret, otpauthUrl: url, qr });
+});
+app.post('/api/public/security/2fa/enable', userAuth, (req, res) => {
+  const secret = req.user.twofa_secret;
+  if (!secret) return res.status(400).json({ error: '请先获取2FA密钥' });
+  if (!verifyTotp(secret, (req.body || {}).code)) return res.status(400).json({ error: '动态验证码错误' });
+  db.prepare('UPDATE users SET twofa_enabled=1 WHERE id=?').run(req.user.id);
+  addNotification(req.user.id, '双重验证已启用', '谷歌验证器双重验证已启用。', 'security');
+  res.json({ ok: true });
+});
+app.post('/api/public/security/2fa/disable', userAuth, (req, res) => {
+  const b = req.body || {};
+  if (!bcrypt.compareSync(String(b.password || ''), req.user.password)) return res.status(401).json({ error: '登录密码错误' });
+  if (!verifyTotp(req.user.twofa_secret, b.code)) return res.status(400).json({ error: '动态验证码错误' });
+  db.prepare("UPDATE users SET twofa_enabled=0,twofa_secret='' WHERE id=?").run(req.user.id);
+  addNotification(req.user.id, '双重验证已关闭', '账户双重验证已关闭。', 'security');
+  res.json({ ok: true });
+});
+
+app.post('/api/public/security/freeze', userAuth, (req, res) => {
+  const enabled = !!(req.body || {}).enabled;
+  const password = String((req.body || {}).password || '');
+  if (!bcrypt.compareSync(password, req.user.password)) return res.status(401).json({ error: '登录密码错误' });
+  db.prepare('UPDATE users SET emergency_frozen=? WHERE id=?').run(enabled ? 1 : 0, req.user.id);
+  addNotification(req.user.id, enabled ? '账户已紧急冻结' : '账户紧急冻结已解除', enabled ? '所有资金与跟单操作已暂停。' : '账户操作已恢复。', 'security');
+  res.json({ ok: true, emergencyFrozen: enabled });
+});
+
+app.get('/api/public/support/thread', userAuth, (req, res) => {
+  let thread = db.prepare('SELECT * FROM support_threads WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user.id);
+  if (!thread) {
+    const info = db.prepare("INSERT INTO support_threads (user_id,subject) VALUES (?,'在线客服')").run(req.user.id);
+    thread = db.prepare('SELECT * FROM support_threads WHERE id=?').get(info.lastInsertRowid);
   }
-  res.json({ ok: true, groupCreated: progress >= 100 });
+  const messages = db.prepare('SELECT * FROM support_messages WHERE thread_id=? ORDER BY id ASC').all(thread.id);
+  res.json({ thread, messages });
+});
+app.post('/api/public/support/messages', userAuth, (req, res) => {
+  const content = String((req.body || {}).content || '').trim();
+  if (!content) return res.status(400).json({ error: '消息不能为空' });
+  let thread = db.prepare('SELECT * FROM support_threads WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user.id);
+  if (!thread) {
+    const info = db.prepare("INSERT INTO support_threads (user_id,subject) VALUES (?,'在线客服')").run(req.user.id);
+    thread = db.prepare('SELECT * FROM support_threads WHERE id=?').get(info.lastInsertRowid);
+  }
+  db.prepare('INSERT INTO support_messages (thread_id,sender_type,sender_id,content) VALUES (?,?,?,?)').run(thread.id, 'user', req.user.id, content);
+  db.prepare("UPDATE support_threads SET status='open',updated_at=datetime('now','localtime') WHERE id=?").run(thread.id);
+  res.json({ ok: true });
 });
 
+app.get('/api/public/lead-trader', userAuth, (req, res) => {
+  const application = db.prepare('SELECT * FROM lead_trader_applications WHERE user_id=? ORDER BY id DESC LIMIT 1').get(req.user.id);
+  const rooms = db.prepare('SELECT * FROM rooms WHERE leader_user_id=? ORDER BY id DESC').all(req.user.id).map(toRoom);
+  const earnings = db.prepare('SELECT COALESCE(SUM(leader_earnings),0) s FROM rooms WHERE leader_user_id=?').get(req.user.id).s;
+  res.json({ application, rooms, earnings });
+});
+app.post('/api/public/lead-trader/apply', userAuth, (req, res) => {
+  const b = req.body || {};
+  const pending = db.prepare("SELECT id FROM lead_trader_applications WHERE user_id=? AND status='pending'").get(req.user.id);
+  if (pending) return res.status(409).json({ error: '已有待审核的带单申请' });
+  db.prepare('INSERT INTO lead_trader_applications (user_id,experience,strategy,contact) VALUES (?,?,?,?)').run(req.user.id, String(b.experience || ''), String(b.strategy || ''), String(b.contact || ''));
+  addNotification(req.user.id, '带单申请已提交', '平台将在收到申请后完成资质审核。', 'lead');
+  res.json({ ok: true });
+});
+
+app.get('/api/public/yields', userAuth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM yield_records WHERE uid=? ORDER BY id DESC').all(req.user.uid));
+});
+app.get('/api/public/rewards', userAuth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM referral_rewards WHERE to_uid=? ORDER BY id DESC').all(req.user.uid));
+});
+app.get('/api/public/groups', userAuth, (req, res) => {
+  res.json(db.prepare('SELECT g.* FROM groups g JOIN group_members m ON m.group_id=g.id WHERE m.uid=? ORDER BY g.id DESC').all(req.user.uid));
+});
+app.get('/api/public/groups/:id/messages', userAuth, (req, res) => {
+  const member = db.prepare('SELECT 1 ok FROM group_members WHERE group_id=? AND uid=?').get(req.params.id, req.user.uid);
+  if (!member) return res.status(403).json({ error: '您不在该股东群中' });
+  res.json(db.prepare('SELECT * FROM group_messages WHERE group_id=? ORDER BY id ASC').all(req.params.id));
+});
+app.post('/api/public/groups/:id/message', userAuth, (req, res) => {
+  const content = String((req.body || {}).content || '').trim();
+  if (!content) return res.status(400).json({ error: '消息不能为空' });
+  const member = db.prepare('SELECT 1 ok FROM group_members WHERE group_id=? AND uid=?').get(req.params.id, req.user.uid);
+  if (!member) return res.status(403).json({ error: '您不在该股东群中' });
+  db.prepare('INSERT INTO group_messages (group_id,uid,user_name,content) VALUES (?,?,?,?)').run(req.params.id, req.user.uid, req.user.name, content);
+  res.json({ ok: true });
+});
 
 // ================= 等级体系 / 团队 =================
 const LEVEL_RULES = {
@@ -604,7 +938,7 @@ function refreshUserLevel(userId) {
 }
 
 function addAvailable(userId, amt) {
-  if (amt > 0) db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ? WHERE id = ?').run(amt, amt, amt, userId);
+  if (amt > 0) db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ?, total_assets = balance + ? WHERE id = ?').run(amt, amt, amt, amt, userId);
 }
 
 // ================= 直推邀请奖励（注册实名 → 冻结钱包）=================
@@ -614,7 +948,7 @@ function grantInviteReward(referredUser) {
   if (!ref) return null;
   const count = db.prepare("SELECT COUNT(*) c FROM users WHERE referrer_id=? AND kyc_status='verified'").get(ref.id).c;
   const amount = count >= 30 ? 10 : count >= 10 ? 3 : 1;
-  db.prepare('UPDATE users SET frozen_balance = frozen_balance + ? WHERE id = ?').run(amount, ref.id);
+  db.prepare('UPDATE users SET frozen_balance = frozen_balance + ?, balance = balance + ?, total_assets = balance + ? WHERE id = ?').run(amount, amount, amount, ref.id);
   const info = db.prepare('INSERT INTO invite_rewards (referrer_uid, referred_uid, referred_name, amount, status) VALUES (?,?,?,?,?)')
     .run(ref.uid, referredUser.uid, referredUser.name, amount, 'frozen');
   return { referrer: ref, amount, id: info.lastInsertRowid };
@@ -632,114 +966,130 @@ function unlockInviteRewards(referredUser) {
   if (total > 0) {
     const ref = db.prepare('SELECT * FROM users WHERE id = ?').get(referredUser.referrer_id);
     if (ref) {
-      db.prepare('UPDATE users SET frozen_balance = frozen_balance - ?, available = available + ?, balance = balance + ? WHERE id = ?').run(total, total, total, ref.id);
+      db.prepare('UPDATE users SET frozen_balance = frozen_balance - ?, available = available + ? WHERE id = ?').run(total, total, ref.id);
     }
   }
   return total;
 }
 
-// ================= 日化收益结算引擎 =================
+// ================= 日化收益结算引擎（房间统一收益率） =================
 function randBetween(min, max) { return Number((min + Math.random() * (max - min)).toFixed(4)); }
 
+function timeZoneParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '00';
+  return { year: get('year'), month: get('month'), day: get('day'), hour: Number(get('hour')), minute: Number(get('minute')) };
+}
+
+function businessDate(date = new Date()) {
+  const p = timeZoneParts(date);
+  return p.year + '-' + p.month + '-' + p.day;
+}
+
+function roomYieldForDate(room, bizDate) {
+  const existing = db.prepare('SELECT yield_rate FROM room_daily_yields WHERE room_id=? AND biz_date=?').get(room.id, bizDate);
+  if (existing) return Number(existing.yield_rate);
+  const minY = Number(room.daily_yield_min ?? 0.1);
+  const maxY = Number(room.daily_yield_max ?? 0.5);
+  const rate = randBetween(Math.min(minY, maxY), Math.max(minY, maxY));
+  db.prepare('INSERT OR IGNORE INTO room_daily_yields (room_id,biz_date,yield_rate) VALUES (?,?,?)').run(room.id, bizDate, rate);
+  return Number(db.prepare('SELECT yield_rate FROM room_daily_yields WHERE room_id=? AND biz_date=?').get(room.id, bizDate).yield_rate);
+}
+
 function settleDaily(req) {
-  const today = new Date().toISOString().slice(0, 10);
+  const bizDate = businessDate();
   const force = !!(req && req.query && req.query.force);
-  const done = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE settle_date = ?').get(today).c;
-  if (done > 0 && !force) return { skipped: true, count: 0, reason: '今天已结算' };
-  const follows = db.prepare("SELECT * FROM follows WHERE status = 'active'").all();
+  const done = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE settle_date=?').get(bizDate).c;
+  if (done > 0 && !force) return { skipped: true, count: 0, reason: '今天已结算', bizDate };
+  const follows = db.prepare("SELECT * FROM follows WHERE status='active'").all();
   let count = 0;
   const profitByUid = {};
+  const roomRateCache = new Map();
   for (const f of follows) {
-    const already = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE follow_id = ? AND settle_date = ?').get(f.id, today).c;
+    const already = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE follow_id=? AND settle_date=?').get(f.id, bizDate).c;
     if (already > 0) continue;
-    const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(f.room_id);
+    const room = db.prepare('SELECT * FROM rooms WHERE id=?').get(f.room_id);
     if (!room || room.daily_yield_min == null) continue;
-    const principal = f.allocated || 0;
+    const principal = Number(f.allocated || 0);
     if (principal <= 0) continue;
-    const minY = Number(room.daily_yield_min || 0.1);
-    const maxY = Number(room.daily_yield_max || 0.5);
-    const yieldRate = randBetween(minY, maxY);
+    if (!roomRateCache.has(room.id)) roomRateCache.set(room.id, roomYieldForDate(room, bizDate));
+    const yieldRate = roomRateCache.get(room.id);
     const profit = Number((principal * yieldRate / 100).toFixed(4));
-    const feePct = Number(room.performance_fee || 10);
-    const custPct = Number(room.customer_share || 50);
-    const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(f.uid);
+    const feePct = Math.max(0, Math.min(100, Number(room.performance_fee || 0)));
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(f.user_id);
     if (!user) continue;
     if (profit >= 0) {
       const traderShare = Number((profit * feePct / 100).toFixed(4));
-      const customerShare = Number((profit * custPct / 100).toFixed(4));
-      const fundShare = Number((profit - traderShare - customerShare).toFixed(4));
-      db.prepare('UPDATE users SET balance = balance + ?, available = available + ?, total_income = total_income + ? WHERE id = ?').run(customerShare, customerShare, customerShare, user.id);
-      db.prepare('UPDATE rooms SET total_profit = total_profit + ?, leader_earnings = COALESCE(leader_earnings,0) + ? WHERE id = ?').run(profit, traderShare, room.id);
+      const customerShare = Number((profit - traderShare).toFixed(4));
+      db.prepare('UPDATE users SET balance=balance+?,available=available+?,total_income=total_income+?,total_assets=balance+? WHERE id=?').run(customerShare, customerShare, customerShare, customerShare, user.id);
+      db.prepare('UPDATE rooms SET total_profit=total_profit+?,leader_earnings=COALESCE(leader_earnings,0)+? WHERE id=?').run(profit, traderShare, room.id);
+      if (room.leader_user_id && traderShare > 0) {
+        addAvailable(Number(room.leader_user_id), traderShare);
+        addNotification(Number(room.leader_user_id), '绩效费到账', room.name + ' 当日绩效费 ' + traderShare.toFixed(4) + ' USDT 已进入可用余额。', 'performance');
+      }
       db.prepare('INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, profit, traderShare, customerShare, fundShare, today);
-      if (fundShare > 0) db.prepare('UPDATE platform_pool SET balance = balance + ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = 1').run(fundShare);
+        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, profit, traderShare, customerShare, 0, bizDate);
       profitByUid[user.uid] = (profitByUid[user.uid] || 0) + profit;
-      // 权益累计
-      const curEquity = (f.equity || principal) + customerShare;
-      db.prepare('UPDATE follows SET equity = ? WHERE id = ?').run(Number(curEquity.toFixed(4)), f.id);
+      const curEquity = Number(f.equity || principal) + customerShare;
+      db.prepare('UPDATE follows SET equity=? WHERE id=?').run(Number(curEquity.toFixed(4)), f.id);
+      addNotification(user.id, '跟单收益到账', room.name + ' 当日收益率 ' + yieldRate.toFixed(4) + '%，到账 ' + customerShare.toFixed(4) + ' USDT。', 'yield');
     } else {
-      // 亏损日：客户按本金全额承担亏损（分成比例仅作用于盈利）
       const loss = Math.abs(profit);
-      const customerLoss = loss;
-      if (customerLoss > 0) db.prepare('UPDATE users SET balance = balance - ?, available = available - ? WHERE id = ?').run(customerLoss, customerLoss, user.id);
+      db.prepare('UPDATE users SET balance=balance-?,total_assets=balance-? WHERE id=?').run(loss, loss, user.id);
       db.prepare('INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, -loss, 0, -customerLoss, 0, today);
-      const curEquity = (f.equity || principal) - customerLoss;
-      db.prepare('UPDATE follows SET equity = ? WHERE id = ?').run(Number(curEquity.toFixed(4)), f.id);
-      // 止损检查
-      if (f.stop_loss > 0 && curEquity <= principal * (1 - f.stop_loss / 100)) {
-        db.prepare('UPDATE follows SET stop_triggered = 1 WHERE id = ?').run(f.id);
+        .run(f.id, f.uid, room.id, room.name, principal, yieldRate, -loss, 0, -loss, 0, bizDate);
+      const curEquity = Number(f.equity || principal) - loss;
+      db.prepare('UPDATE follows SET equity=? WHERE id=?').run(Number(curEquity.toFixed(4)), f.id);
+      addNotification(user.id, '跟单出现亏损', room.name + ' 当日亏损 ' + loss.toFixed(4) + ' USDT。', 'yield');
+      if (Number(f.stop_loss || 0) > 0 && curEquity <= principal * (1 - Number(f.stop_loss) / 100)) {
+        db.prepare('UPDATE follows SET stop_triggered=1 WHERE id=?').run(f.id);
       }
     }
     count++;
   }
-  // 等级化推荐奖励：直推跟单奖励 + 团队收益奖励（从资金池支付）
-  distributeLevelRewards(profitByUid, today);
-  return { skipped: false, count };
+  distributeLevelRewards(profitByUid, bizDate);
+  return { skipped: false, count, bizDate, timezone: APP_TZ };
 }
 
 function distributeLevelRewards(profitByUid, date) {
   const referrers = db.prepare('SELECT * FROM users WHERE id IN (SELECT DISTINCT referrer_id FROM users WHERE referrer_id IS NOT NULL)').all();
   for (const u of referrers) {
     const m = computeMetrics(u.id);
-    db.prepare('UPDATE users SET user_level = ? WHERE id = ?').run(m.level, u.id);
+    db.prepare('UPDATE users SET user_level=? WHERE id=?').run(m.level, u.id);
     const rule = LEVEL_RULES[m.level];
-    // 直推用户跟单收益奖励
     let directProfit = 0;
     for (const did of m.directIds) {
-      const du = db.prepare('SELECT uid FROM users WHERE id = ?').get(did);
+      const du = db.prepare('SELECT uid FROM users WHERE id=?').get(did);
       if (du && profitByUid[du.uid]) directProfit += profitByUid[du.uid];
     }
     const directAmt = Number((directProfit * rule.directRate).toFixed(4));
-    // 团队收益奖励（L1+）
     let teamProfit = 0;
     for (const did of m.desc) {
-      const du = db.prepare('SELECT uid FROM users WHERE id = ?').get(did);
+      const du = db.prepare('SELECT uid FROM users WHERE id=?').get(did);
       if (du && profitByUid[du.uid]) teamProfit += profitByUid[du.uid];
     }
     const teamAmt = Number((teamProfit * rule.teamRate).toFixed(4));
-    const pool = db.prepare('SELECT balance FROM platform_pool WHERE id = 1').get();
-    let poolBalance = pool ? pool.balance : 0;
-    if (directAmt > 0 && poolBalance > 0) {
-      const pay = Math.min(directAmt, poolBalance);
-      addAvailable(u.id, pay);
-      db.prepare('UPDATE platform_pool SET balance = balance - ? WHERE id = 1').run(pay);
-      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'direct', pay, '直推跟单奖励 ' + date);
-      poolBalance -= pay;
+    if (directAmt > 0) {
+      addAvailable(u.id, directAmt);
+      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'direct', directAmt, '直推跟单奖励 ' + date);
+      addNotification(u.id, '直推跟单奖励到账', directAmt.toFixed(4) + ' USDT 已进入可用余额。', 'reward');
     }
-    if (teamAmt > 0 && poolBalance > 0) {
-      const pay = Math.min(teamAmt, poolBalance);
-      addAvailable(u.id, pay);
-      db.prepare('UPDATE platform_pool SET balance = balance - ? WHERE id = 1').run(pay);
-      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'team', pay, '团队收益奖励 ' + date);
+    if (teamAmt > 0) {
+      addAvailable(u.id, teamAmt);
+      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'team', teamAmt, '团队收益奖励 ' + date);
+      addNotification(u.id, '团队收益奖励到账', teamAmt.toFixed(4) + ' USDT 已进入可用余额。', 'reward');
     }
   }
 }
 
-// 定时结算：每天 06:00-06:10 自动执行一次
+// 定时结算：按新加坡时区每天 06:00 执行一次
 setInterval(() => {
-  const d = new Date();
-  if (d.getHours() === 6 && d.getMinutes() < 10) {
+  const p = timeZoneParts();
+  if (p.hour === 6 && p.minute < 10) {
     try { settleDaily(); } catch (e) { console.error('settle error', e.message); }
   }
 }, 60000);
@@ -774,7 +1124,7 @@ app.post('/api/admin/rooms/:id/loss', auth, (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(f.uid);
     if (!user) continue;
     const custLoss = loss;
-    if (custLoss > 0) db.prepare('UPDATE users SET balance = balance - ?, available = available - ? WHERE id = ?').run(custLoss, custLoss, user.id);
+    if (custLoss > 0) db.prepare('UPDATE users SET balance = balance - ?, total_assets = balance - ? WHERE id = ?').run(custLoss, custLoss, user.id);
     const equity = ((f.equity || f.allocated) - custLoss);
     db.prepare("INSERT INTO yield_records (follow_id,uid,room_id,room_name,principal,yield_rate,profit,trader_share,customer_share,fund_share,settle_date) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))")
       .run(f.id, f.uid, room.id, room.name, f.allocated, -pct, -loss, 0, -custLoss, 0);
@@ -786,68 +1136,10 @@ app.post('/api/admin/rooms/:id/loss', auth, (req, res) => {
   }
   res.json({ ok: true, affected });
 });
-// ================= 用户收益与推荐奖励 =================
-app.get('/api/public/yields', (req, res) => {
-  const uid = String(req.query.uid || '');
-  if (!uid) return res.json([]);
-  res.json(db.prepare('SELECT * FROM yield_records WHERE uid = ? ORDER BY id DESC').all(uid));
-});
-
-app.get('/api/public/rewards', (req, res) => {
-  const uid = String(req.query.uid || '');
-  if (!uid) return res.json([]);
-  res.json(db.prepare('SELECT * FROM referral_rewards WHERE to_uid = ? ORDER BY id DESC').all(uid));
-});
-
-// ================= 众筹群聊 =================
-function ensureProjectGroup(projectId) {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
-  if (!project) return null;
-  let grp = db.prepare('SELECT * FROM groups WHERE project_id = ?').get(projectId);
-  if (!grp) {
-    const code = 'G' + Date.now().toString(36).toUpperCase().slice(-6);
-    const info = db.prepare('INSERT INTO groups (project_id,project_title,name,invite_code) VALUES (?,?,?,?)').run(projectId, project.title, project.title + ' 股东群', code);
-    grp = db.prepare('SELECT * FROM groups WHERE id = ?').get(info.lastInsertRowid);
-    // add all existing investors
-    const investors = db.prepare('SELECT DISTINCT uid, user_id FROM investments WHERE project_id = ?').all(projectId);
-    for (const inv of investors) {
-      const u = db.prepare('SELECT * FROM users WHERE uid = ?').get(inv.uid);
-      if (u) db.prepare('INSERT OR IGNORE INTO group_members (group_id,uid,user_name) VALUES (?,?,?)').run(grp.id, u.uid, u.name);
-    }
-  }
-  return grp;
-}
-
-app.get('/api/public/groups', (req, res) => {
-  const uid = String(req.query.uid || '');
-  if (!uid) return res.json([]);
-  const rows = db.prepare('SELECT g.* FROM groups g JOIN group_members m ON m.group_id = g.id WHERE m.uid = ? ORDER BY g.id DESC').all(uid);
-  res.json(rows);
-});
-
-app.get('/api/public/groups/:id/messages', (req, res) => {
-  res.json(db.prepare('SELECT * FROM group_messages WHERE group_id = ? ORDER BY id ASC LIMIT 200').all(req.params.id));
-});
-
-app.post('/api/public/groups/:id/message', (req, res) => {
-  const b = req.body || {};
-  const uid = String(b.uid || '');
-  const user = uid ? db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) : null;
-  const member = db.prepare('SELECT * FROM group_members WHERE group_id = ? AND uid = ?').get(req.params.id, uid);
-  if (!member) return res.status(403).json({ error: '您不是该群成员' });
-  const content = String(b.content || '').slice(0, 500);
-  if (!content) return res.status(400).json({ error: '消息不能为空' });
-  db.prepare('INSERT INTO group_messages (group_id,uid,user_name,content) VALUES (?,?,?,?)').run(req.params.id, uid, user ? user.name : uid, content);
-  res.json({ ok: true });
-});
-
-// 投资：达到100%自动建群 + 加入群
-const originalInvest = app.post.bind(app);
-
 // ================= 二维码 / 上传 / 行情 =================
 app.get('/api/public/qrcode', async (req, res) => {
   try {
-    const text = String(req.query.text || 'https://elitetrade.onrender.com');
+    const text = String(req.query.text || (process.env.APP_URL || 'http://localhost:' + PORT));
     const buf = await QRCode.toBuffer(text.slice(0, 500), { width: 260, margin: 1 });
     res.type('png').send(buf);
   } catch (e) { res.status(400).json({ error: '二维码生成失败' }); }
@@ -862,6 +1154,16 @@ app.post('/api/admin/upload', auth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到文件' });
   const url = '/uploads/' + req.file.filename;
   res.json({ ok: true, url, name: req.file.originalname });
+});
+app.post('/api/public/upload/avatar', userAuth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '未收到文件' });
+  const url = '/uploads/' + req.file.filename;
+  db.prepare('UPDATE users SET avatar=? WHERE id=?').run(url, req.user.id);
+  res.json({ ok: true, url });
+});
+app.post('/api/public/upload/kyc', userAuth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '未收到文件' });
+  res.json({ ok: true, url: '/uploads/' + req.file.filename });
 });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
@@ -880,7 +1182,7 @@ app.put('/api/admin/quotes/:symbol', auth, (req, res) => {
   const b = req.body || {};
   const cur = db.prepare('SELECT * FROM quotes WHERE symbol = ?').get(req.params.symbol);
   if (!cur) return res.status(404).json({ error: '品种不存在' });
-  db.prepare('UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=? WHERE symbol=?')
+  db.prepare("UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=?, updated_at=datetime('now','localtime') WHERE symbol=?")
     .run(b.name ?? cur.name, b.price ?? cur.price, b.askPrice ?? cur.ask_price, b.change ?? cur.change_percent, b.category ?? cur.category, b.apiId ?? cur.api_id, req.params.symbol);
   res.json({ ok: true });
 });
@@ -896,7 +1198,13 @@ app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
     let updated = 0;
     for (const r of rows) {
       const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')] || prices[String(r.symbol).split('/')[0]];
-      if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
+      if (p) { db.prepare("UPDATE quotes SET price=?, ask_price=?, updated_at=datetime('now','localtime') WHERE symbol=?").run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
+    }
+    if (updated === 0) {
+      const msg = rows.length === 0
+        ? '没有可刷新的加密品种（请在「行情品种」中新增或检查分类为 crypto）'
+        : '未能从行情源获取价格：请确认服务器可访问外网（Coinbase/Binance/CoinGecko），或该品种尚未配置可用代码';
+      return res.json({ ok: false, updated: 0, message: msg, candidates: rows.length });
     }
     res.json({ ok: true, updated });
   } catch (e) { res.status(500).json({ error: '刷新失败: ' + e.message }); }
@@ -966,8 +1274,45 @@ app.get('/api/admin/team', auth, (req, res) => {
   res.json(out);
 });
 app.get('/api/admin/fund-pool', auth, (req, res) => {
-  const pool = db.prepare('SELECT balance FROM platform_pool WHERE id=1').get();
-  res.json({ balance: pool ? pool.balance : 0 });
+  res.json({ balance: 0, discontinued: true, message: '基金池已取消，推广奖励由平台运营账户直接发放' });
+});
+app.get('/api/admin/support-threads', auth, (req, res) => {
+  const rows = db.prepare(`SELECT t.*, u.uid, u.name, (SELECT COUNT(*) FROM support_messages m WHERE m.thread_id=t.id) message_count FROM support_threads t LEFT JOIN users u ON u.id=t.user_id ORDER BY t.updated_at DESC`).all();
+  res.json(rows);
+});
+app.get('/api/admin/support-threads/:id/messages', auth, (req, res) => {
+  const thread = db.prepare('SELECT * FROM support_threads WHERE id=?').get(req.params.id);
+  if (!thread) return res.status(404).json({ error: '工单不存在' });
+  res.json({ thread, messages: db.prepare('SELECT * FROM support_messages WHERE thread_id=? ORDER BY id ASC').all(thread.id) });
+});
+app.post('/api/admin/support-threads/:id/reply', auth, (req, res) => {
+  const thread = db.prepare('SELECT * FROM support_threads WHERE id=?').get(req.params.id);
+  if (!thread) return res.status(404).json({ error: '工单不存在' });
+  const content = String((req.body || {}).content || '').trim();
+  if (!content) return res.status(400).json({ error: '回复不能为空' });
+  db.prepare('INSERT INTO support_messages (thread_id,sender_type,sender_id,content) VALUES (?,?,?,?)').run(thread.id, 'admin', req.admin.id, content);
+  db.prepare("UPDATE support_threads SET status='replied',updated_at=datetime('now','localtime') WHERE id=?").run(thread.id);
+  addNotification(thread.user_id, '客服已回复', content.slice(0, 120), 'support');
+  res.json({ ok: true });
+});
+app.get('/api/admin/lead-trader-applications', auth, (req, res) => {
+  const rows = db.prepare(`SELECT a.*, u.uid, u.name, u.phone, u.email, u.kyc_status FROM lead_trader_applications a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC`).all();
+  res.json(rows);
+});
+app.post('/api/admin/lead-trader-applications/:id/review', auth, (req, res) => {
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const appRow = db.prepare('SELECT * FROM lead_trader_applications WHERE id=?').get(req.params.id);
+  if (!appRow) return res.status(404).json({ error: '申请不存在' });
+  if (appRow.status !== 'pending') return res.status(409).json({ error: '该申请已处理' });
+  const status = action === 'approve' ? 'approved' : 'rejected';
+  db.prepare('UPDATE lead_trader_applications SET status=?,reviewed_by=?,reviewed_at=? WHERE id=? AND status=?').run(status, req.admin.username, now(), appRow.id, 'pending');
+  addNotification(appRow.user_id, action === 'approve' ? '带单申请已通过' : '带单申请未通过', action === 'approve' ? '请联系运营人员配置带单房间。' : '请完善资料后重新申请。', 'lead');
+  addAudit('admin', req.admin.username, 'REVIEW_LEAD_TRADER_' + action.toUpperCase(), 'lead_application', appRow.id, { userId: appRow.user_id });
+  res.json({ ok: true });
+});
+app.get('/api/admin/audit-logs', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500').all());
 });
 
 // ---------- static ----------
@@ -980,7 +1325,7 @@ app.use(express.static(FRONT_DIST));
 app.use((req, res) => res.sendFile(path.join(FRONT_DIST, 'index.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`EliteTrade Admin Server running on http://localhost:${PORT}`);
+  console.log(`盈透copy Admin Server running on http://localhost:${PORT}`);
   console.log(`- Admin UI: http://localhost:${PORT}/admin`);
   console.log(`- Frontend: http://localhost:${PORT}/`);
   console.log(`- API: http://localhost:${PORT}/api/...`);

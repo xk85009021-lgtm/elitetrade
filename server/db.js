@@ -12,6 +12,11 @@ const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'elitetrade.db');
 export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare("PRAGMA table_info(" + table + ")").all();
+  if (!cols.some((c) => c.name === column)) db.exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+}
+
 export function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS admins (
@@ -298,10 +303,137 @@ export function initDb() {
   // ensure users.avatar column exists (existing DBs)
   try { db.exec("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''"); } catch (e) { /* already exists */ }
 
-  const adminCount = db.prepare('SELECT COUNT(*) c FROM admins').get().c;
+  // ---------- security and real-operation tables ----------
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      jti TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL,
+      user_agent TEXT DEFAULT '',
+      ip TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      last_seen_at TEXT DEFAULT (datetime('now','localtime')),
+      revoked_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id, revoked_at);
+    CREATE TABLE IF NOT EXISTS password_reset_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      channel TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      attempts INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reset_user ON password_reset_codes(user_id, used_at);
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      type TEXT DEFAULT 'system',
+      is_read INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, id DESC);
+    CREATE TABLE IF NOT EXISTS support_threads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      subject TEXT DEFAULT '在线客服',
+      status TEXT DEFAULT 'open',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id INTEGER NOT NULL,
+      sender_type TEXT NOT NULL,
+      sender_id INTEGER,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_support_messages_thread ON support_messages(thread_id, id);
+    CREATE TABLE IF NOT EXISTS lead_trader_applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      experience TEXT DEFAULT '',
+      strategy TEXT DEFAULT '',
+      contact TEXT DEFAULT '',
+      status TEXT DEFAULT 'pending',
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS room_daily_yields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id TEXT NOT NULL,
+      biz_date TEXT NOT NULL,
+      yield_rate REAL NOT NULL,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(room_id, biz_date)
+    );
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_type TEXT NOT NULL,
+      actor_id TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      detail TEXT,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
+    CREATE TABLE IF NOT EXISTS app_config (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+  `);
+
+  ensureColumn('users', 'twofa_secret', "TEXT DEFAULT ''");
+  ensureColumn('users', 'twofa_enabled', 'INTEGER DEFAULT 0');
+  ensureColumn('users', 'emergency_frozen', 'INTEGER DEFAULT 0');
+  ensureColumn('users', 'last_login_at', 'TEXT');
+  ensureColumn('users', 'last_login_ip', "TEXT DEFAULT ''");
+  ensureColumn('rooms', 'leader_user_id', 'INTEGER');
+  ensureColumn('follows', 'lock_until', 'TEXT');
+  ensureColumn('follows', 'closed_reason', 'TEXT');
+  ensureColumn('transactions', 'review_note', "TEXT DEFAULT ''");
+  ensureColumn('quotes', 'updated_at', "TEXT DEFAULT ''");
+
+  db.prepare(`INSERT INTO app_config (key,value) VALUES ('timezone','Asia/Singapore') ON CONFLICT(key) DO NOTHING`).run();
+  db.prepare(`INSERT INTO app_config (key,value) VALUES ('min_follow_days','7') ON CONFLICT(key) DO NOTHING`).run();
+  db.prepare(`INSERT INTO content_settings (key,value,type) VALUES ('app_logo','','image') ON CONFLICT(key) DO NOTHING`).run();
+  const legacyName = db.prepare("SELECT value FROM content_settings WHERE key='app_name'").get();
+  if (!legacyName || legacyName.value === 'EliteTrade') {
+    db.prepare("INSERT INTO content_settings (key,value,type,updated_at) VALUES ('app_name','盈透copy','text',datetime('now','localtime')) ON CONFLICT(key) DO UPDATE SET value='盈透copy', updated_at=datetime('now','localtime')").run();
+  }
+
+  // Existing plaintext passwords are upgraded once. Empty passwords become unusable random hashes.
+  try {
+    const legacyUsers = db.prepare('SELECT id,password FROM users').all();
+    const updatePwd = db.prepare('UPDATE users SET password=? WHERE id=?');
+    const tx = db.transaction((rows) => {
+      for (const row of rows) {
+        const value = String(row.password || '');
+        if (!value.startsWith('$2')) {
+          updatePwd.run(bcrypt.hashSync(value || requireRandomPassword(), 10), row.id);
+        }
+      }
+    });
+    tx(legacyUsers);
+  } catch (e) {
+    console.error('password migration failed:', e.message);
+  }
+
+    const adminCount = db.prepare('SELECT COUNT(*) c FROM admins').get().c;
   if (adminCount === 0) {
+    const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'Admin@123456');
+    if (!initialPassword) throw new Error('首次生产部署必须通过 ADMIN_INITIAL_PASSWORD 设置管理员密码');
     db.prepare('INSERT INTO admins (username, password_hash, role) VALUES (?,?,?)')
-      .run('admin', bcrypt.hashSync('Admin@123456', 10), 'superadmin');
+      .run(process.env.ADMIN_USERNAME || 'admin', bcrypt.hashSync(initialPassword, 10), 'superadmin');
   }
 
   const rateCount = db.prepare('SELECT COUNT(*) c FROM commission_rates').get().c;
@@ -310,14 +442,21 @@ export function initDb() {
     st.run(1, 20); st.run(2, 12); st.run(3, 8);
   }
 
-  seedUsers();
-  seedRooms();
-  seedProjects();
-  seedTransactions();
-  seedKyc();
-  seedCommissions();
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    seedUsers();
+    seedRooms();
+    seedProjects();
+    seedTransactions();
+    seedKyc();
+    seedCommissions();
+  }
   seedContent();
-  seedQuotes();
+  if (process.env.SEED_DEMO_DATA === 'true') seedQuotes();
+  db.exec('DROP TABLE IF EXISTS platform_pool; DROP TABLE IF EXISTS fund_pool;');
+}
+
+function requireRandomPassword() {
+  return 'disabled-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 function seedUsers() {
@@ -429,23 +568,22 @@ function seedCommissions() {
 }
 
 function seedContent() {
-  const c = db.prepare('SELECT COUNT(*) c FROM content_settings').get().c;
-  if (c > 0) return;
-  const ins = db.prepare('INSERT OR REPLACE INTO content_settings (key,value,type) VALUES (?,?,?)');
+  const ins = db.prepare("INSERT INTO content_settings (key,value,type,updated_at) VALUES (?,?,?,datetime('now','localtime')) ON CONFLICT(key) DO NOTHING");
   const items = [
-    ['app_name','EliteTrade','text'],
+    ['app_name','盈透copy','text'],
+    ['app_logo','','image'],
     ['app_slogan','智能量化交易与实体众筹投资平台','text'],
     ['home_banner_title','专业量化跟单，让资产稳健增值','text'],
     ['home_banner_subtitle','AI量化策略 + 实体众筹，一站式全球资产配置','text'],
-    ['home_banner_image','https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&auto=format&fit=crop&q=80','image'],
+    ['home_banner_image','','image'],
     ['hot_section_title','热门跟单专区','text'],
     ['hot_section_tag','热门','text'],
     ['crowdfunding_title','实体众筹','text'],
-    ['crowdfunding_subtitle','共同投资经过严格审查的高收益实体企业。利用机构级的碎片化所有权。','text'],
+    ['crowdfunding_subtitle','共同投资经过严格审查的实体企业项目。','text'],
     ['referral_title','邀请好友，共享收益','text'],
-    ['referral_desc','邀请好友，可享高达30%的好友交易手续费返佣。','text'],
-    ['deposit_notice','充值请务必使用本人实名钱包地址，到账后自动入账。','text'],
-    ['withdraw_notice','提现申请将在审核通过后 24 小时内到账。','text'],
+    ['referral_desc','邀请好友注册并完成实名认证，可获得冻结邀请奖励。','text'],
+    ['deposit_notice','请使用平台指定地址充值，审核通过后入账。','text'],
+    ['withdraw_notice','提现申请将在审核通过后扣款。','text'],
     ['customer_service','联系在线客服获取帮助','text'],
   ];
   items.forEach(i => ins.run(...i));
