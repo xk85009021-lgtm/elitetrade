@@ -124,3 +124,20 @@ Render 免费实例不提供持久磁盘，重新部署或实例重启后 SQLite
 - 后端和管理后台：elitetrade-admin
 - SQLite 快照：database/elitetrade.db
 - 审查报告：EliteTrade与EA系统-全面审查报告.md
+
+## 新版邀请页与房间头像
+
+- 邀请页上方展示“构建您的财富网络”和最高 30% 返佣。
+- 专属邀请卡显示邀请码、邀请链接、二维码海报和分享入口。
+- 显示直推人数、个人业绩、大区业绩、小区业绩、团队总业绩。
+- 显示当前等级、下一等级、双条件升级进度和分支业绩明细。
+- 后台创建或编辑跟单房间时，房间头像改为本地上传图片。
+
+## EA 代理裂变系统交付
+
+- MySQL 8.0 建表 SQL：outputs/ea-copy-fission/sql/01_schema_mysql8.sql
+- 等级参数种子：outputs/ea-copy-fission/sql/02_seed_config.sql
+- 对账 SQL：outputs/ea-copy-fission/sql/90_reconcile.sql
+- 核心结算代码：outputs/ea-copy-fission/backend/internal/service
+- 后台接口代码：outputs/ea-copy-fission/backend/internal/api
+- 有效用户口径：注册 + KYC 通过 + 真实入金 + 非风控，不要求绑定 MT 账户。

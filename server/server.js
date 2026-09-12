@@ -702,7 +702,28 @@ app.get('/api/public/referral', userAuth, (req, res) => {
   const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
   const teamRewards = db.prepare('SELECT * FROM team_rewards WHERE uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
   const levelInfo = LEVEL_RULES[metrics.level];
-  res.json({ code: user.referral_code, userLevel: metrics.level, levelRule: levelInfo, directVerified: metrics.directVerified, teamVolume: metrics.volume, frozenInviteRewards: frozen, inviteRewards: inviteRewards.map((i) => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })), teamRewards: teamRewards.map((t) => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })), teamSize: team, totalCommission, rates: rates.map((r) => ({ level: r.level, rate: r.rate })), commissions: commissions.map((c2) => ({ id: c2.id, level: c2.level, amount: c2.amount, rate: c2.rate, orderId: c2.order_id, createdAt: c2.created_at })) });
+  res.json({
+    code: user.referral_code,
+    userLevel: metrics.level,
+    levelRule: levelInfo,
+    directVerified: metrics.directVerified,
+    directCount: metrics.directIds.length,
+    teamSize: metrics.desc.length,
+    personalVolume: metrics.personalVolume,
+    teamVolume: metrics.teamTotalVolume,
+    teamTotalVolume: metrics.teamTotalVolume,
+    largeAreaVolume: metrics.largestBranchVolume,
+    smallAreaVolume: metrics.smallAreaVolume,
+    branchVolumes: metrics.branchVolumes,
+    nextLevel: metrics.nextLevel,
+    progress: metrics.progress,
+    frozenInviteRewards: frozen,
+    inviteRewards: inviteRewards.map((i) => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })),
+    teamRewards: teamRewards.map((t) => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })),
+    totalCommission,
+    rates: rates.map((r) => ({ level: r.level, rate: r.rate })),
+    commissions: commissions.map((c2) => ({ id: c2.id, level: c2.level, amount: c2.amount, rate: c2.rate, orderId: c2.order_id, createdAt: c2.created_at })),
+  });
 });
 
 app.put('/api/public/user/update', userAuth, (req, res) => {
@@ -915,20 +936,53 @@ function getDirectIds(userId) {
   return db.prepare('SELECT id FROM users WHERE referrer_id = ?').all(userId).map(r => r.id);
 }
 
+function activePrincipalOf(userIds) {
+  if (!userIds.length) return 0;
+  const marks = userIds.map(() => '?').join(',');
+  return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...userIds).s || 0);
+}
+
 function computeMetrics(userId) {
   const directVerified = db.prepare("SELECT COUNT(*) c FROM users WHERE referrer_id=? AND kyc_status='verified'").get(userId).c;
   const directIds = getDirectIds(userId);
   const desc = getDescendants(userId);
-  let volume = 0;
-  if (desc.length) {
-    const marks = desc.map(() => '?').join(',');
-    volume = db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...desc).s || 0;
-  }
+  const personalVolume = activePrincipalOf([userId]);
+  const teamTotalVolume = activePrincipalOf(desc);
+  const branchVolumes = directIds.map((id) => ({ memberId: id, volume: activePrincipalOf([id, ...getDescendants(id)]) }));
+  const largestBranchVolume = branchVolumes.reduce((max, branch) => Math.max(max, branch.volume), 0);
+  const smallAreaVolume = Math.max(0, teamTotalVolume - largestBranchVolume);
+
+  const rules = [
+    { level: 'L1', needDirect: 10, needSmallVolume: 10000, directRate: 0.10, teamRate: 0.02 },
+    { level: 'L2', needDirect: 20, needSmallVolume: 100000, directRate: 0.20, teamRate: 0.04 },
+    { level: 'L3', needDirect: 30, needSmallVolume: 1000000, directRate: 0.30, teamRate: 0.06 },
+  ];
   let level = 'L0';
-  if (directVerified >= 30 && volume >= 1000000) level = 'L3';
-  else if (directVerified >= 20 && volume >= 100000) level = 'L2';
-  else if (directVerified >= 10 && volume >= 10000) level = 'L1';
-  return { level, directVerified, volume, directIds, desc };
+  if (directVerified >= 30 && smallAreaVolume >= 1000000) level = 'L3';
+  else if (directVerified >= 20 && smallAreaVolume >= 100000) level = 'L2';
+  else if (directVerified >= 10 && smallAreaVolume >= 10000) level = 'L1';
+
+  const nextLevel = rules.find((rule) => rule.level === (level === 'L0' ? 'L1' : level === 'L1' ? 'L2' : level === 'L2' ? 'L3' : '')) || null;
+  const directProgress = nextLevel ? Math.min(100, directVerified / nextLevel.needDirect * 100) : 100;
+  const volumeProgress = nextLevel ? Math.min(100, smallAreaVolume / nextLevel.needSmallVolume * 100) : 100;
+  return {
+    level,
+    directVerified,
+    volume: teamTotalVolume,
+    personalVolume,
+    teamTotalVolume,
+    largestBranchVolume,
+    smallAreaVolume,
+    branchVolumes,
+    directIds,
+    desc,
+    nextLevel,
+    progress: {
+      direct: Number(directProgress.toFixed(1)),
+      volume: Number(volumeProgress.toFixed(1)),
+      overall: nextLevel ? Number(((directProgress + volumeProgress) / 2).toFixed(1)) : 100,
+    },
+  };
 }
 
 function refreshUserLevel(userId) {
@@ -1270,7 +1324,7 @@ app.get('/api/admin/team', auth, (req, res) => {
   for (const u of users) {
     const m = computeMetrics(u.id);
     const direct = db.prepare('SELECT uid, name, kyc_status, user_level FROM users WHERE referrer_id = ?').all(u.id);
-    out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'L0', calcLevel: m.level, directVerified: m.directVerified, teamVolume: m.volume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
+    out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'L0', calcLevel: m.level, directVerified: m.directVerified, personalVolume: m.personalVolume, largeAreaVolume: m.largestBranchVolume, smallAreaVolume: m.smallAreaVolume, teamVolume: m.teamTotalVolume, teamTotalVolume: m.teamTotalVolume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
   }
   res.json(out);
 });

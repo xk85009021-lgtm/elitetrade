@@ -235,6 +235,20 @@ async function openUserModal(id) {
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveUser(${id || 0})">保存</button></div>
     </div></div>`;
   const mask = document.createElement('div'); mask.innerHTML = html; document.body.appendChild(mask.firstElementChild);
+  const preview = $('#roomAvatarPreview');
+  if (r.avatar) preview.innerHTML = '<img src="' + esc(r.avatar) + '" style="width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid #e2e8f0;">';
+  $('#roomAvatarFile').addEventListener('change', async function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/admin/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: form });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error || '上传失败', 'error');
+    $('#roomAvatarUrl').value = data.url;
+    preview.innerHTML = '<img src="' + esc(data.url) + '" style="width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid #e2e8f0;">';
+    toast('房间头像已上传');
+  });
 }
 async function saveUser(id) {
   const f = new FormData($('#userForm'));
@@ -293,7 +307,7 @@ async function openRoomModal(id) {
         <div class="field"><label>房间ID</label><input name="id" value="${esc(r.id)}" ${id ? 'disabled' : ''}></div>
         <div class="field"><label>名称</label><input name="name" value="${esc(r.name)}"></div>
         <div class="field"><label>英文名</label><input name="englishName" value="${esc(r.englishName)}"></div>
-        <div class="field"><label>头像URL</label><input name="avatar" value="${esc(r.avatar)}"></div>
+        <div class="field"><label>房间头像</label><input type="file" id="roomAvatarFile" accept="image/*"><input type="hidden" name="avatar" id="roomAvatarUrl" value="${esc(r.avatar)}"><div id="roomAvatarPreview" style="margin-top:8px;"></div></div>
         <div class="field"><label>标签（逗号分隔）</label><input name="tags" value="${esc(tags)}"></div>
         <div class="field"><label>风险风格</label><input name="riskLevel" value="${esc(r.riskLevel)}"></div>
         <div class="field"><label>总利润(USD)</label><input name="totalProfit" type="number" step="0.01" value="${r.totalProfit ?? 0}"></div>
@@ -765,11 +779,11 @@ async function loadTeam(root) {
         <div class="panel-head"><h3>用户推荐关系与等级</h3></div>
         <div class="panel-body">
           <div class="table-wrap"><table>
-            <thead><tr><th>用户</th><th>等级</th><th>直推实名</th><th>团队业绩</th><th>冻结奖励</th><th>实名</th><th>直推下级</th></tr></thead>
+            <thead><tr><th>用户</th><th>等级</th><th>直推实名</th><th>个人业绩</th><th>大区业绩</th><th>小区业绩</th><th>团队总业绩</th><th>冻结奖励</th><th>实名</th><th>直推下级</th></tr></thead>
             <tbody>${users.map(u => `<tr>
               <td><b>${esc(u.name)}</b><br><span style="color:#94a3b8;font-size:12px;">${esc(u.uid)}</span></td>
               <td><span class="pill ${(u.userLevel||'L0')==='L0'?'gray':u.userLevel==='L1'?'blue':u.userLevel==='L2'?'indigo':'amber'}">${esc(u.userLevel || 'L0')}</span></td>
-              <td>${u.directVerified}</td><td>${Number(u.teamVolume||0).toLocaleString()}</td><td>${Number(u.frozenBalance||0).toFixed(2)}</td>
+              <td>${u.directVerified}</td><td>${Number(u.personalVolume||0).toLocaleString()}</td><td>${Number(u.largeAreaVolume||0).toLocaleString()}</td><td>${Number(u.smallAreaVolume||0).toLocaleString()}</td><td>${Number(u.teamTotalVolume||u.teamVolume||0).toLocaleString()}</td><td>${Number(u.frozenBalance||0).toFixed(2)}</td>
               <td>${statusPill(u.kycStatus)}</td>
               <td style="font-size:12px;">${(u.direct||[]).map(d => esc(d.name)).join('、') || '—'}</td>
             </tr>`).join('') || '<tr><td colspan="7" class="empty">暂无用户</td></tr>'}</tbody>
