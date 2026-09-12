@@ -1320,8 +1320,8 @@ app.get('/api/admin/audit-logs', auth, (req, res) => {
 const ADMIN_DIST = path.join(ROOT, 'admin-dist');
 const FRONT_DIST = path.join(ROOT, 'frontend-dist');
 
-app.use('/admin', express.static(ADMIN_DIST));
-app.use('/admin', (req, res) => res.sendFile(path.join(ADMIN_DIST, 'index.html')));
+app.use('/admin', express.static(ADMIN_DIST, { etag: false, maxAge: 0, setHeaders: (res) => res.setHeader('Cache-Control', 'no-store') }));
+app.use('/admin', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(ADMIN_DIST, 'index.html')); });
 app.use(express.static(FRONT_DIST));
 app.use((req, res) => res.sendFile(path.join(FRONT_DIST, 'index.html')));
 

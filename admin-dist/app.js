@@ -116,7 +116,7 @@ function renderLayout() {
     if (logo && c.app_logo) logo.innerHTML = '<img src="' + esc(c.app_logo) + '" style="width:100%;height:100%;object-fit:contain;">';
     if (title && c.app_name) title.textContent = c.app_name;
   }).catch(() => {});
-  $('.nav-item').forEach(b => b.addEventListener('click', () => { state.view = b.dataset.nav; renderLayout(); loadView(); }));
+  $$('.nav-item').forEach(b => b.addEventListener('click', () => { state.view = b.dataset.nav; renderLayout(); loadView(); }));
   $('#logoutBtn').addEventListener('click', logout);
   loadView();
 }
@@ -747,7 +747,7 @@ async function loadWallet(root) {
 }
 async function saveWallet() {
   const items = [];
-  $('[data-wallet]').forEach(el => { if (el.dataset.kind === 'notice') items.push({ key: 'deposit_notice', value: el.value }); else items.push({ key: 'wallet_' + el.dataset.wallet + '_' + el.dataset.kind, value: el.value }); });
+  $$('[data-wallet]').forEach(el => { if (el.dataset.kind === 'notice') items.push({ key: 'deposit_notice', value: el.value }); else items.push({ key: 'wallet_' + el.dataset.wallet + '_' + el.dataset.kind, value: el.value }); });
   try { await api('/api/content', { method: 'PUT', body: JSON.stringify({ items }) }); toast('钱包配置已保存'); } catch (e) { toast(e.message, 'error'); }
 }
 
