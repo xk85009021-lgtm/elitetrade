@@ -418,6 +418,9 @@ export function initDb() {
   ensureColumn('transactions', 'deposit_uid', "TEXT DEFAULT ''");
   ensureColumn('transactions', 'payment_qr', "TEXT DEFAULT ''");
   ensureColumn('transactions', 'currency', "TEXT DEFAULT 'USDT'");
+  ensureColumn('transactions', 'expires_at', "TEXT DEFAULT ''");
+  ensureColumn('transactions', 'cancelled_at', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_user_status ON transactions(user_id,type,status,id DESC)'); } catch (e) {}
 
   const addressCount = db.prepare('SELECT COUNT(*) c FROM deposit_addresses').get().c;
   if (addressCount === 0) {

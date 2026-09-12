@@ -339,9 +339,10 @@ app.delete('/api/projects/:id', auth, (req, res) => {
 
 // ---------- transactions (充值/提现审核) ----------
 app.get('/api/transactions', auth, (req, res) => {
+  db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE type='deposit' AND status IN ('draft','pending') AND expires_at<>'' AND expires_at<?").run(new Date().toISOString());
   const status = String(req.query.status || '').trim();
   const type = String(req.query.type || '').trim();
-  let sql = 'SELECT * FROM transactions WHERE 1=1';
+  let sql = "SELECT * FROM transactions WHERE amount > 0 AND status <> 'draft'";
   const params = [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (type) { sql += ' AND type = ?'; params.push(type); }
@@ -356,6 +357,10 @@ app.put('/api/transactions/:id/review', auth, (req, res) => {
     const t = db.prepare('SELECT * FROM transactions WHERE id = ?').get(req.params.id);
     if (!t) return { code: 404, error: '记录不存在' };
     if (t.status !== 'pending') return { code: 409, error: '该申请已处理，不能重复审核' };
+    if (t.type === 'deposit' && t.expires_at && t.expires_at < new Date().toISOString()) {
+      db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE id=?").run(t.id);
+      return { code: 410, error: '该充值订单已超过15分钟，不能继续审核' };
+    }
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(t.user_id);
     if (!user) return { code: 404, error: '用户不存在' };
     if (action === 'approve' && t.type === 'withdraw' && Number(t.amount) > Number(user.available || 0)) {
@@ -558,8 +563,9 @@ app.post('/api/public/password/reset/confirm', (req, res) => {
 
 app.get('/api/public/user', userAuth, (req, res) => res.json({ ok: true, user: toUser(req.user) }));
 app.get('/api/public/transactions', userAuth, (req, res) => {
+  db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE user_id=? AND type='deposit' AND status IN ('draft','pending') AND expires_at<>'' AND expires_at<?").run(req.user.id, new Date().toISOString());
   const rows = db.prepare('SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC').all(req.user.id);
-  res.json(rows.map((t) => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, currency: t.currency, address: t.address, depositUid: t.deposit_uid, paymentQr: t.payment_qr, title: t.title, subtitle: t.subtitle, status: t.status, reviewNote: t.review_note, createdAt: t.created_at })));
+  res.json(rows.map((t) => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, currency: t.currency, address: t.address, depositUid: t.deposit_uid, paymentQr: t.payment_qr, title: t.title, subtitle: t.subtitle, status: t.status, reviewNote: t.review_note, expiresAt: t.expires_at, cancelledAt: t.cancelled_at, subtitle: t.subtitle, createdAt: t.created_at })));
 });
 
 app.get('/api/public/deposit-address', userAuth, (req, res) => {
@@ -570,24 +576,67 @@ app.get('/api/public/deposit-address', userAuth, (req, res) => {
   res.json({ ...row, qrUrl: row.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(row.address)) });
 });
 
+app.post('/api/public/deposit/start', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const nowMs = Date.now();
+  db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE user_id=? AND type='deposit' AND status IN ('draft','pending') AND expires_at<>'' AND expires_at<?").run(req.user.id, new Date(nowMs).toISOString());
+  const active = db.prepare("SELECT * FROM transactions WHERE user_id=? AND type='deposit' AND status IN ('draft','pending') AND expires_at>? ORDER BY id DESC LIMIT 1").get(req.user.id, new Date(nowMs).toISOString());
+  if (active) {
+    return res.json({
+      ok: true,
+      orderId: active.id,
+      txnId: active.txn_id,
+      amount: active.amount,
+      network: active.network,
+      currency: active.currency || 'USDT',
+      address: active.address,
+      qrUrl: active.payment_qr,
+      status: active.status,
+      expiresAt: active.expires_at,
+      resumed: true,
+    });
+  }
+  const network = String((req.body || {}).network || 'TRC20').trim();
+  const currency = String((req.body || {}).currency || 'USDT').trim();
+  const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND status='active' ORDER BY RANDOM() LIMIT 1").get(network, currency);
+  if (!addressRow) return res.status(404).json({ error: '当前网络暂未配置可用充值地址' });
+  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
+  const expiresAt = new Date(nowMs + 15 * 60 * 1000).toISOString();
+  const qrUrl = addressRow.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(addressRow.address));
+  const info = db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time,deposit_uid,payment_qr,currency,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(txn, req.user.id, req.user.name, 'deposit', 0, network, addressRow.address, 'USDT Deposit', '充值订单已创建', 'draft', new Date(nowMs).toISOString().slice(0, 10), new Date(nowMs).toTimeString().slice(0, 5), req.user.uid, qrUrl, currency, expiresAt);
+  res.json({ ok: true, orderId: info.lastInsertRowid, txnId: txn, amount: 0, network, currency, address: addressRow.address, qrUrl, status: 'draft', expiresAt, resumed: false });
+});
+
 app.post('/api/public/deposit', userAuth, (req, res) => {
   if (!requireUsableAccount(req, res)) return;
   const b = req.body || {};
+  const orderId = Number(b.orderId || 0);
   const amount = Number(b.amount || 0);
   const depositUid = String(b.depositUid || '').trim();
-  const network = String(b.network || 'TRC20').trim();
-  const currency = String(b.currency || 'USDT').trim();
+  const order = db.prepare("SELECT * FROM transactions WHERE id=? AND user_id=? AND type='deposit'").get(orderId, req.user.id);
+  if (!order) return res.status(404).json({ error: '充值订单不存在' });
+  if (order.status === 'pending') return res.status(409).json({ error: '订单已提交审核，不能修改；如需更换请先取消订单重新下单' });
+  if (order.status !== 'draft') return res.status(409).json({ error: '订单已结束，请重新下单充值' });
+  if (order.expires_at && order.expires_at < new Date().toISOString()) {
+    db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE id=?").run(order.id);
+    return res.status(410).json({ error: '充值订单已超过15分钟，请重新下单充值' });
+  }
   if (amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
   if (!depositUid) return res.status(400).json({ error: '请输入充值 UID' });
   if (depositUid !== String(req.user.uid)) return res.status(403).json({ error: '充值 UID 与当前登录账号不一致' });
-  const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND address=? AND status='active'").get(network, currency, String(b.address || '').trim());
-  if (!addressRow) return res.status(400).json({ error: '充值地址已失效，请刷新后重新选择' });
-  const paymentQr = addressRow.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(addressRow.address));
-  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
-  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time,deposit_uid,payment_qr,currency) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(txn, req.user.id, req.user.name, 'deposit', amount, network, addressRow.address, 'USDT Deposit', '充值待确认', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5), depositUid, paymentQr, currency);
-  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核，收款地址 ' + addressRow.address, 'deposit');
-  res.json({ ok: true, txn, address: addressRow.address, qrUrl: paymentQr });
+  db.prepare("UPDATE transactions SET amount=?,status='pending',subtitle='充值待审核',deposit_uid=?,date=date('now'),time=time('now','localtime') WHERE id=?").run(amount, depositUid, order.id);
+  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核，收款地址 ' + order.address, 'deposit');
+  res.json({ ok: true, orderId: order.id, txn: order.txn_id, address: order.address, qrUrl: order.payment_qr, expiresAt: order.expires_at });
+});
+
+app.put('/api/public/deposit/orders/:id/cancel', userAuth, (req, res) => {
+  const order = db.prepare("SELECT * FROM transactions WHERE id=? AND user_id=? AND type='deposit'").get(req.params.id, req.user.id);
+  if (!order) return res.status(404).json({ error: '充值订单不存在' });
+  if (!['draft', 'pending'].includes(order.status)) return res.status(409).json({ error: '该订单已不能取消' });
+  db.prepare("UPDATE transactions SET status='cancelled', cancelled_at=datetime('now','localtime'), subtitle='用户已取消' WHERE id=?").run(order.id);
+  addNotification(req.user.id, '充值订单已取消', '您已取消充值订单，可重新下单并生成新的随机地址。', 'deposit');
+  res.json({ ok: true });
 });
 
 app.post('/api/public/withdraw', userAuth, (req, res) => {
