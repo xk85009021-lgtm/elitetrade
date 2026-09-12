@@ -441,14 +441,15 @@ async function loadTransactions(root) {
             <select id="txnType"><option value="">全部类型</option><option value="deposit" ${type==='deposit'?'selected':''}>充值</option><option value="withdraw" ${type==='withdraw'?'selected':''}>提现</option></select>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>订单号</th><th>用户</th><th>类型</th><th>金额(USD)</th><th>网络</th><th>地址</th><th>时间</th><th>状态</th><th>审核人</th><th>操作</th></tr></thead>
+            <thead><tr><th>订单号</th><th>用户</th><th>充值UID</th><th>类型</th><th>金额(USD)</th><th>网络</th><th>充值地址/二维码</th><th>时间</th><th>状态</th><th>审核人</th><th>操作</th></tr></thead>
             <tbody>${list.map(t => `<tr>
               <td>${esc(t.txn_id)}</td><td><b>${esc(t.user_name)}</b></td>
+              <td>${esc(t.deposit_uid || '—')}</td>
               <td>${t.type === 'deposit' ? '<span class="pill green">充值</span>' : '<span class="pill amber">提现</span>'}</td>
-              <td><b>$${fmtMoney(t.amount)}</b></td><td>${esc(t.network)}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.address)}">${esc(t.address) || '—'}</td>
+              <td><b>${fmtMoney(t.amount)}</b></td><td>${esc(t.network)}</td><td style="max-width:210px;"><div style="font-size:11px;word-break:break-all;">${esc(t.address) || '—'}</div>${t.type==='deposit' && t.payment_qr ? '<img src="' + esc(t.payment_qr) + '" style="width:52px;height:52px;object-fit:cover;border-radius:6px;margin-top:6px;border:1px solid #e2e8f0;">' : ''}</td>
               <td>${fmtDate(t.created_at)}</td><td>${statusPill(t.status)}</td><td>${esc(t.reviewed_by || '—')}</td>
               <td>${t.status === 'pending' ? `<div class="row-actions"><button class="btn xs green" onclick="reviewTxn(${t.id},'approve')">通过</button><button class="btn xs danger" onclick="reviewTxn(${t.id},'reject')">拒绝</button></div>` : '—'}</td>
-            </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无记录</td></tr>'}</tbody>
+            </tr>`).join('') || '<tr><td colspan="11" class="empty">暂无记录</td></tr>'}</tbody>
           </table></div>
         </div>
       </div>`;
@@ -713,56 +714,97 @@ async function delQuote(symbol) {
   try { await api('/api/admin/quotes/' + encodeURIComponent(symbol), { method: 'DELETE' }); toast('已删除'); loadView(); } catch (e) { toast(e.message, 'error'); }
 }
 
-/* ---------- Wallet (充值提现配置) ---------- */
+/* ---------- Wallet (多充值地址池) ---------- */
 async function loadWallet(root) {
   try {
-    const items = await api('/api/content');
-    const g = (k) => items.find(i => i.key === k) || { key: k, value: '' };
-    const networks = ['TRC20', 'ERC20', 'BSC'];
-    root.innerHTML = `
-      <div class="panel">
-        <div class="panel-head"><h3>充值 / 提现钱包配置</h3><button class="btn sm" onclick="saveWallet()">保存配置</button></div>
-        <div class="panel-body">
-          <div style="font-size:12px;color:#64748b;margin-bottom:12px;">设置每个网络的充值地址与付款二维码（上传图片），前端充值页将自动读取显示；提现使用用户填写的地址。</div>
-          ${networks.map(n => `
-            <div class="panel" style="margin-bottom:14px;">
-              <div class="panel-head"><h3 style="font-size:13px;">${n} 网络</h3></div>
-              <div class="panel-body">
-                <div class="field"><label>充值地址</label><input data-wallet="${n}" data-kind="address" value="${esc(g('wallet_' + n + '_address').value)}" placeholder="请输入 ${n} 充值地址"></div>
-                <div class="field"><label>付款二维码</label>
-                  <div style="display:flex;align-items:center;gap:10px;">
-                    <img data-wallet-img="${n}" src="${esc(g('wallet_' + n + '_qr').value)}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);${g('wallet_' + n + '_qr').value ? '' : 'display:none;'}">
-                    <input type="file" data-wallet-upload="${n}" accept="image/*" style="font-size:12px;">
-                    <input type="hidden" data-wallet="${n}" data-kind="qr" value="${esc(g('wallet_' + n + '_qr').value)}">
-                  </div>
-                </div>
-              </div>
-            </div>`).join('')}
-          <div class="field"><label>充值提示</label><input data-wallet="notice" data-kind="notice" value="${esc(g('deposit_notice').value)}"></div>
-        </div>
-      </div>`;
-    networks.forEach(n => {
-      const up = document.querySelector(`[data-wallet-upload="${n}"]`);
-      if (up) up.addEventListener('change', async (e) => {
-        const file = e.target.files[0]; if (!file) return;
-        const fd = new FormData(); fd.append('file', file);
-        try {
-          const r = await fetch('/api/admin/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: fd });
-          const j = await r.json();
-          if (j.url) {
-            document.querySelector(`input[data-wallet="${n}"][data-kind="qr"]`).value = j.url;
-            const img = document.querySelector(`[data-wallet-img="${n}"]`); img.src = j.url; img.style.display = '';
-            toast('二维码已上传');
-          }
-        } catch (err) { toast('上传失败', 'error'); }
-      });
-    });
-  } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+    const addresses = await api('/api/admin/deposit-addresses');
+    const contents = await api('/api/content');
+    const notice = (contents.find(i => i.key === 'deposit_notice') || {}).value || '';
+    const rows = addresses.map(function (a) {
+      return '<tr>' +
+        '<td><b>' + esc(a.network) + '</b></td>' +
+        '<td>' + esc(a.currency) + '</td>' +
+        '<td style="max-width:240px;word-break:break-all;">' + esc(a.address) + '</td>' +
+        '<td>' + (a.qr_url ? '<img src="' + esc(a.qr_url) + '" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;">' : '—') + '</td>' +
+        '<td>' + statusPill(a.status) + '</td>' +
+        '<td>' + Number(a.sort_order || 0) + '</td>' +
+        '<td><div class="row-actions"><button class="btn xs ghost" onclick="openDepositAddressModal(' + a.id + ')">编辑</button><button class="btn xs danger" onclick="deleteDepositAddress(' + a.id + ')">删除</button></div></td>' +
+      '</tr>';
+    }).join('');
+    root.innerHTML = '<div class="panel">' +
+      '<div class="panel-head"><h3>多充币地址与二维码</h3><button class="btn sm" onclick="openDepositAddressModal(0)">+ 新增充值地址</button></div>' +
+      '<div class="panel-body"><div style="font-size:12px;color:#64748b;margin-bottom:12px;">同一网络可以绑定多个地址。客户每次进入充值页或点击“换一个充值地址”时，系统会随机切换一个启用中的地址及对应二维码。</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>网络</th><th>币种</th><th>充值地址</th><th>二维码</th><th>状态</th><th>排序</th><th>操作</th></tr></thead><tbody>' + (rows || '<tr><td colspan="7" class="empty">暂无充值地址</td></tr>') + '</tbody></table></div></div></div>' +
+      '<div class="panel"><div class="panel-head"><h3>充值提示</h3><button class="btn sm" onclick="saveWalletNotice()">保存提示</button></div><div class="panel-body"><div class="field"><textarea id="depositNotice" rows="3">' + esc(notice) + '</textarea></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
 }
-async function saveWallet() {
-  const items = [];
-  $$('[data-wallet]').forEach(el => { if (el.dataset.kind === 'notice') items.push({ key: 'deposit_notice', value: el.value }); else items.push({ key: 'wallet_' + el.dataset.wallet + '_' + el.dataset.kind, value: el.value }); });
-  try { await api('/api/content', { method: 'PUT', body: JSON.stringify({ items }) }); toast('钱包配置已保存'); } catch (e) { toast(e.message, 'error'); }
+
+async function saveWalletNotice() {
+  try {
+    await api('/api/content', { method: 'PUT', body: JSON.stringify({ items: [{ key: 'deposit_notice', value: $('#depositNotice').value, type: 'text' }] }) });
+    toast('充值提示已保存');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function openDepositAddressModal(id) {
+  let row = { network: 'TRC20', currency: 'USDT', address: '', qr_url: '', status: 'active', sort_order: 0 };
+  if (id) {
+    const list = await api('/api/admin/deposit-addresses');
+    row = list.find(function (item) { return Number(item.id) === Number(id); }) || row;
+  }
+  const html = '<div class="modal-mask" onclick="if(event.target===this)closeModal()"><div class="modal">' +
+    '<div class="modal-head"><h3>' + (id ? '编辑充值地址' : '新增充值地址') + '</h3><button class="modal-close" onclick="closeModal()">×</button></div>' +
+    '<div class="modal-body"><div class="form-grid">' +
+      '<div class="field"><label>网络</label><select id="depositNetwork"><option value="TRC20"' + (row.network === 'TRC20' ? ' selected' : '') + '>TRC20</option><option value="ERC20"' + (row.network === 'ERC20' ? ' selected' : '') + '>ERC20</option><option value="BSC"' + (row.network === 'BSC' ? ' selected' : '') + '>BSC</option></select></div>' +
+      '<div class="field"><label>币种</label><select id="depositCurrency"><option value="USDT"' + (row.currency === 'USDT' ? ' selected' : '') + '>USDT</option><option value="ETH"' + (row.currency === 'ETH' ? ' selected' : '') + '>ETH</option><option value="BNB"' + (row.currency === 'BNB' ? ' selected' : '') + '>BNB</option></select></div>' +
+      '<div class="field full"><label>充值地址</label><input id="depositAddress" value="' + esc(row.address) + '" placeholder="请输入充值地址"></div>' +
+      '<div class="field full"><label>地址二维码</label><input id="depositQrFile" type="file" accept="image/*"><input id="depositQrUrl" type="hidden" value="' + esc(row.qr_url || '') + '"><div id="depositQrPreview" style="margin-top:8px;">' + (row.qr_url ? '<img src="' + esc(row.qr_url) + '" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;">' : '') + '</div></div>' +
+      '<div class="field"><label>状态</label><select id="depositStatus"><option value="active"' + (row.status === 'active' ? ' selected' : '') + '>启用</option><option value="inactive"' + (row.status !== 'active' ? ' selected' : '') + '>停用</option></select></div>' +
+      '<div class="field"><label>排序</label><input id="depositSort" type="number" value="' + Number(row.sort_order || 0) + '"></div>' +
+    '</div></div>' +
+    '<div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveDepositAddress(' + (id || 0) + ')">保存</button></div>' +
+  '</div></div>';
+  const mask = document.createElement('div');
+  mask.innerHTML = html;
+  document.body.appendChild(mask.firstElementChild);
+  $('#depositQrFile').addEventListener('change', async function () {
+    const file = this.files && this.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/api/admin/upload', { method: 'POST', headers: { Authorization: 'Bearer ' + token() }, body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '上传失败');
+      $('#depositQrUrl').value = data.url;
+      $('#depositQrPreview').innerHTML = '<img src="' + esc(data.url) + '" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;">';
+      toast('二维码已上传');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+async function saveDepositAddress(id) {
+  const body = {
+    network: $('#depositNetwork').value,
+    currency: $('#depositCurrency').value,
+    address: $('#depositAddress').value.trim(),
+    qrUrl: $('#depositQrUrl').value,
+    status: $('#depositStatus').value,
+    sortOrder: Number($('#depositSort').value || 0),
+  };
+  if (!body.address) return toast('请输入充值地址', 'error');
+  try {
+    if (id) await api('/api/admin/deposit-addresses/' + id, { method: 'PUT', body: JSON.stringify(body) });
+    else await api('/api/admin/deposit-addresses', { method: 'POST', body: JSON.stringify(body) });
+    toast('充值地址已保存');
+    closeModal();
+    loadView();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteDepositAddress(id) {
+  if (!(await confirmDialog('确认删除该充值地址？删除后不会再被随机分配。'))) return;
+  try { await api('/api/admin/deposit-addresses/' + id, { method: 'DELETE' }); toast('已删除'); loadView(); } catch (e) { toast(e.message, 'error'); }
 }
 
 /* ---------- Team (推荐团队) ---------- */

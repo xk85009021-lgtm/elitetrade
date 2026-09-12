@@ -559,19 +559,35 @@ app.post('/api/public/password/reset/confirm', (req, res) => {
 app.get('/api/public/user', userAuth, (req, res) => res.json({ ok: true, user: toUser(req.user) }));
 app.get('/api/public/transactions', userAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC').all(req.user.id);
-  res.json(rows.map((t) => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, title: t.title, subtitle: t.subtitle, status: t.status, reviewNote: t.review_note, createdAt: t.created_at })));
+  res.json(rows.map((t) => ({ id: t.id, txnId: t.txn_id, type: t.type, amount: t.amount, network: t.network, currency: t.currency, address: t.address, depositUid: t.deposit_uid, paymentQr: t.payment_qr, title: t.title, subtitle: t.subtitle, status: t.status, reviewNote: t.review_note, createdAt: t.created_at })));
+});
+
+app.get('/api/public/deposit-address', userAuth, (req, res) => {
+  const network = String(req.query.network || 'TRC20').trim();
+  const currency = String(req.query.currency || 'USDT').trim();
+  const row = db.prepare("SELECT id,network,currency,address,qr_url FROM deposit_addresses WHERE network=? AND currency=? AND status='active' ORDER BY RANDOM() LIMIT 1").get(network, currency);
+  if (!row) return res.status(404).json({ error: '当前网络暂未配置可用充值地址' });
+  res.json({ ...row, qrUrl: row.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(row.address)) });
 });
 
 app.post('/api/public/deposit', userAuth, (req, res) => {
   if (!requireUsableAccount(req, res)) return;
   const b = req.body || {};
   const amount = Number(b.amount || 0);
-  if (amount <= 0) return res.status(400).json({ error: '充值金额无效' });
+  const depositUid = String(b.depositUid || '').trim();
+  const network = String(b.network || 'TRC20').trim();
+  const currency = String(b.currency || 'USDT').trim();
+  if (amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
+  if (!depositUid) return res.status(400).json({ error: '请输入充值 UID' });
+  if (depositUid !== String(req.user.uid)) return res.status(403).json({ error: '充值 UID 与当前登录账号不一致' });
+  const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND address=? AND status='active'").get(network, currency, String(b.address || '').trim());
+  if (!addressRow) return res.status(400).json({ error: '充值地址已失效，请刷新后重新选择' });
+  const paymentQr = addressRow.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(addressRow.address));
   const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
-  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(txn, req.user.id, req.user.name, 'deposit', amount, b.network || 'USDT-TRC20', b.address || '', 'USDT Deposit', '充值待确认', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5));
-  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核。', 'deposit');
-  res.json({ ok: true, txn });
+  db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time,deposit_uid,payment_qr,currency) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(txn, req.user.id, req.user.name, 'deposit', amount, network, addressRow.address, 'USDT Deposit', '充值待确认', 'pending', new Date().toISOString().slice(0, 10), new Date().toTimeString().slice(0, 5), depositUid, paymentQr, currency);
+  addNotification(req.user.id, '充值申请已提交', '充值 ' + amount.toFixed(2) + ' USDT 正在等待后台审核，收款地址 ' + addressRow.address, 'deposit');
+  res.json({ ok: true, txn, address: addressRow.address, qrUrl: paymentQr });
 });
 
 app.post('/api/public/withdraw', userAuth, (req, res) => {
@@ -1328,6 +1344,33 @@ app.get('/api/admin/team', auth, (req, res) => {
   }
   res.json(out);
 });
+app.get('/api/admin/deposit-addresses', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM deposit_addresses ORDER BY network,currency,sort_order,id DESC').all());
+});
+app.post('/api/admin/deposit-addresses', auth, (req, res) => {
+  const b = req.body || {};
+  const network = String(b.network || '').trim();
+  const currency = String(b.currency || 'USDT').trim();
+  const address = String(b.address || '').trim();
+  if (!network || !address) return res.status(400).json({ error: '网络和充值地址不能为空' });
+  try {
+    const info = db.prepare('INSERT INTO deposit_addresses (network,currency,address,qr_url,status,sort_order) VALUES (?,?,?,?,?,?)').run(network, currency, address, String(b.qrUrl || ''), b.status || 'active', Number(b.sortOrder) || 0);
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(409).json({ error: '该网络下地址已存在' }); }
+});
+app.put('/api/admin/deposit-addresses/:id', auth, (req, res) => {
+  const b = req.body || {};
+  const cur = db.prepare('SELECT * FROM deposit_addresses WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '充值地址不存在' });
+  db.prepare("UPDATE deposit_addresses SET network=?,currency=?,address=?,qr_url=?,status=?,sort_order=?,updated_at=datetime('now','localtime') WHERE id=?")
+    .run(b.network ?? cur.network, b.currency ?? cur.currency, b.address ?? cur.address, b.qrUrl ?? cur.qr_url, b.status ?? cur.status, b.sortOrder ?? cur.sort_order, req.params.id);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/deposit-addresses/:id', auth, (req, res) => {
+  db.prepare('DELETE FROM deposit_addresses WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 app.get('/api/admin/fund-pool', auth, (req, res) => {
   res.json({ balance: 0, discontinued: true, message: '基金池已取消，推广奖励由平台运营账户直接发放' });
 });

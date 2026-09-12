@@ -7,7 +7,7 @@ const businessTables = [
   'group_messages','group_members','groups','investments','yield_records','room_daily_yields',
   'follows','transactions','kyc','invite_rewards','team_rewards','commissions','notifications',
   'support_messages','support_threads','lead_trader_applications','password_reset_codes','user_sessions',
-  'audit_logs','referral_rewards','price_history','quotes','projects','rooms','users'
+  'audit_logs','referral_rewards','price_history','quotes','deposit_addresses','projects','rooms','users'
 ];
 
 const reset = db.transaction(() => {

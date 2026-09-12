@@ -385,6 +385,19 @@ export function initDb() {
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
+    CREATE TABLE IF NOT EXISTS deposit_addresses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      network TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USDT',
+      address TEXT NOT NULL,
+      qr_url TEXT DEFAULT '',
+      status TEXT DEFAULT 'active',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(network,address)
+    );
+    CREATE INDEX IF NOT EXISTS idx_deposit_addresses_pool ON deposit_addresses(network,currency,status,sort_order);
     CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY,
       value TEXT,
@@ -402,8 +415,21 @@ export function initDb() {
   ensureColumn('follows', 'closed_reason', 'TEXT');
   ensureColumn('transactions', 'review_note', "TEXT DEFAULT ''");
   ensureColumn('quotes', 'updated_at', "TEXT DEFAULT ''");
+  ensureColumn('transactions', 'deposit_uid', "TEXT DEFAULT ''");
+  ensureColumn('transactions', 'payment_qr', "TEXT DEFAULT ''");
+  ensureColumn('transactions', 'currency', "TEXT DEFAULT 'USDT'");
 
-  db.prepare(`INSERT INTO app_config (key,value) VALUES ('timezone','Asia/Singapore') ON CONFLICT(key) DO NOTHING`).run();
+  const addressCount = db.prepare('SELECT COUNT(*) c FROM deposit_addresses').get().c;
+  if (addressCount === 0) {
+    for (const network of ['TRC20', 'ERC20', 'BSC']) {
+      const address = db.prepare('SELECT value FROM content_settings WHERE key=?').get('wallet_' + network + '_address');
+      const qr = db.prepare('SELECT value FROM content_settings WHERE key=?').get('wallet_' + network + '_qr');
+      if (address && address.value) {
+        db.prepare('INSERT OR IGNORE INTO deposit_addresses (network,currency,address,qr_url,status,sort_order) VALUES (?,?,?,?,?,?)').run(network, 'USDT', address.value, qr ? qr.value : '', 'active', 0);
+      }
+    }
+  }
+    db.prepare(`INSERT INTO app_config (key,value) VALUES ('timezone','Asia/Singapore') ON CONFLICT(key) DO NOTHING`).run();
   db.prepare(`INSERT INTO app_config (key,value) VALUES ('min_follow_days','7') ON CONFLICT(key) DO NOTHING`).run();
   db.prepare(`INSERT INTO content_settings (key,value,type) VALUES ('app_logo','','image') ON CONFLICT(key) DO NOTHING`).run();
   const legacyName = db.prepare("SELECT value FROM content_settings WHERE key='app_name'").get();
