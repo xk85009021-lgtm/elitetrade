@@ -1072,10 +1072,10 @@ function activePrincipalOf(userIds) {
   return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...userIds).s || 0);
 }
 
-function dailyNewVolumeOf(userIds, bizDate) {
-  if (!userIds.length) return 0;
-  const marks = userIds.map(() => '?').join(',');
-  return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE date(created_at)=? AND user_id IN (" + marks + ")").get(bizDate, ...userIds).s || 0);
+function standardLotsForSmallArea(volume) {
+  const smallArea = Math.max(0, Number(volume) || 0);
+  if (smallArea < 2000) return 0;
+  return Number((Math.floor(smallArea / 1000) * 0.5).toFixed(4));
 }
 
 function v4DescendantCount(memberId) {
@@ -1348,16 +1348,15 @@ function settleAgentPromotion(profitByUid, bizDate) {
     const metrics = computeMetrics(user.id);
     reconcileAgentLevel(user, metrics, bizDate);
     const fresh = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
-    const dailyTeamVolume = dailyNewVolumeOf(metrics.desc, bizDate);
-    const dailyBranches = metrics.directIds.map((id) => ({ memberId: id, volume: dailyNewVolumeOf([id, ...getDescendants(id)], bizDate) }));
-    const dailyLargest = dailyBranches.reduce((max, branch) => Math.max(max, Number(branch.volume || 0)), 0);
-    const dailySmall = Math.max(0, dailyTeamVolume - dailyLargest);
-    const standardLots = Number((dailySmall / 2000).toFixed(4));
+    const currentTeamVolume = metrics.teamTotalVolume;
+    const currentLargestBranch = metrics.largestBranchVolume;
+    const currentSmallArea = metrics.smallAreaVolume;
+    const standardLots = standardLotsForSmallArea(currentSmallArea);
     db.prepare(`INSERT INTO daily_team_volume (member_id,biz_date,team_new_volume,largest_branch_volume,small_area_new_volume,standard_lots,branch_json)
       VALUES (?,?,?,?,?,?,?)
       ON CONFLICT(member_id,biz_date) DO UPDATE SET team_new_volume=excluded.team_new_volume,largest_branch_volume=excluded.largest_branch_volume,small_area_new_volume=excluded.small_area_new_volume,standard_lots=excluded.standard_lots,branch_json=excluded.branch_json`)
-      .run(user.id, bizDate, dailyTeamVolume, dailyLargest, dailySmall, standardLots, JSON.stringify(dailyBranches));
-    snaps.set(user.id, { user: fresh, metrics, dailyTeamVolume, dailyLargest, dailySmall, standardLots });
+      .run(user.id, bizDate, currentTeamVolume, currentLargestBranch, currentSmallArea, standardLots, JSON.stringify(metrics.branchVolumes));
+    snaps.set(user.id, { user: fresh, metrics, currentTeamVolume, currentLargestBranch, currentSmallArea, standardLots });
   }
 
   const rewards = [];
@@ -1377,7 +1376,7 @@ function settleAgentPromotion(profitByUid, bizDate) {
     addReward({ bizDate, memberId, type: 'direct_profit', fromMemberId: null, baseAmount: round2(directProfit), lots: 0, rate: rule.directRate, unitPrice: 0, amount: directAmount, remark: '一代直推当日净利润 ' + round2(directProfit).toFixed(2) + ' × ' + (rule.directRate * 100).toFixed(0) + '%' });
 
     const lotAmount = round2(snap.standardLots * rule.lotPrice);
-    addReward({ bizDate, memberId, type: 'lot_bonus', fromMemberId: null, baseAmount: snap.dailySmall, lots: snap.standardLots, rate: 0, unitPrice: rule.lotPrice, amount: lotAmount, remark: '小区新增跟单业绩 ' + snap.dailySmall.toFixed(2) + ' ÷ 2000 × ' + rule.lotPrice + ' USD/手' });
+    addReward({ bizDate, memberId, type: 'lot_bonus', fromMemberId: null, baseAmount: snap.currentSmallArea, lots: snap.standardLots, rate: 0, unitPrice: rule.lotPrice, amount: lotAmount, remark: '当前小区有效业绩 ' + snap.currentSmallArea.toFixed(2) + '，折合 ' + snap.standardLots.toFixed(4) + ' 标准手 × ' + rule.lotPrice + ' USD/手' });
     if (lotAmount > 0) lotIncome.set(memberId, round2((lotIncome.get(memberId) || 0) + lotAmount));
   }
 
