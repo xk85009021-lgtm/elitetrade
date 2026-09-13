@@ -9,6 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: TZ
+        value: Asia/Singapore
       - key: APP_TZ
         value: Asia/Singapore
       - key: MIN_FOLLOW_DAYS

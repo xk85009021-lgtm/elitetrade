@@ -45,7 +45,7 @@ export function initDb() {
       is_verified INTEGER DEFAULT 0,
       avatar TEXT DEFAULT '',
       frozen_balance REAL DEFAULT 0,
-      user_level TEXT DEFAULT 'L0',
+      user_level TEXT DEFAULT 'V1',
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE TABLE IF NOT EXISTS rooms (
@@ -135,17 +135,6 @@ export function initDb() {
       reviewed_at TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
-    CREATE TABLE IF NOT EXISTS commissions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      user_name TEXT,
-      level INTEGER DEFAULT 1,
-      amount REAL DEFAULT 0,
-      rate REAL DEFAULT 0,
-      order_id TEXT,
-      status TEXT DEFAULT 'completed',
-      created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
     CREATE TABLE IF NOT EXISTS content_settings (
       key TEXT PRIMARY KEY,
       value TEXT,
@@ -223,28 +212,6 @@ export function initDb() {
       content TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
-    CREATE TABLE IF NOT EXISTS referral_rewards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      from_uid TEXT,
-      from_name TEXT,
-      to_uid TEXT,
-      to_name TEXT,
-      level INTEGER DEFAULT 1,
-      amount REAL DEFAULT 0,
-      source TEXT,
-      created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS platform_pool (
-      id INTEGER PRIMARY KEY,
-      balance REAL DEFAULT 0,
-      updated_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS fund_pool (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      amount REAL DEFAULT 0,
-      note TEXT,
-      created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
 
     CREATE TABLE IF NOT EXISTS price_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -262,25 +229,6 @@ export function initDb() {
       created_at TEXT DEFAULT (datetime('now','localtime')),
       unlocked_at TEXT
     );
-    CREATE TABLE IF NOT EXISTS fund_pool (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      balance REAL DEFAULT 0,
-      updated_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS team_rewards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid TEXT,
-      user_name TEXT,
-      level TEXT,
-      kind TEXT,
-      amount REAL DEFAULT 0,
-      source TEXT,
-      created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS commission_rates (
-      level INTEGER PRIMARY KEY,
-      rate REAL DEFAULT 0
-    );
   `);
 
 
@@ -293,12 +241,11 @@ export function initDb() {
   try { db.exec("ALTER TABLE rooms ADD COLUMN leader_earnings REAL DEFAULT 0"); } catch (e) {}
 
   try { db.exec("ALTER TABLE users ADD COLUMN frozen_balance REAL DEFAULT 0"); } catch (e) {}
-  try { db.exec("ALTER TABLE users ADD COLUMN user_level TEXT DEFAULT 'L0'"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN user_level TEXT DEFAULT 'V1'"); } catch (e) {}
   try { db.exec("ALTER TABLE follows ADD COLUMN stop_loss REAL DEFAULT 0"); } catch (e) {}
   try { db.exec("ALTER TABLE follows ADD COLUMN stop_triggered INTEGER DEFAULT 0"); } catch (e) {}
   try { db.exec("ALTER TABLE follows ADD COLUMN equity REAL DEFAULT 0"); } catch (e) {}
   try { db.exec("ALTER TABLE follows ADD COLUMN ended_at TEXT"); } catch (e) {}
-  try { db.exec("INSERT INTO platform_pool (id, balance) SELECT 1, 0 WHERE NOT EXISTS (SELECT 1 FROM platform_pool WHERE id = 1)"); } catch (e) {}
   try { db.exec("ALTER TABLE quotes ADD COLUMN api_id TEXT"); } catch (e) {}
   // ensure users.avatar column exists (existing DBs)
   try { db.exec("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''"); } catch (e) { /* already exists */ }
@@ -385,6 +332,78 @@ export function initDb() {
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(id DESC);
+    CREATE TABLE IF NOT EXISTS agent_level_config (
+      level INTEGER PRIMARY KEY,
+      level_name TEXT NOT NULL,
+      direct_valid_required INTEGER NOT NULL DEFAULT 0,
+      small_area_required REAL NOT NULL DEFAULT 0,
+      need_v4_count INTEGER NOT NULL DEFAULT 0,
+      direct_rate REAL NOT NULL DEFAULT 0,
+      lot_price REAL NOT NULL DEFAULT 0,
+      same_level_rate REAL NOT NULL DEFAULT 0,
+      upgrade_bonus REAL NOT NULL DEFAULT 0,
+      status INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS daily_team_volume (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      biz_date TEXT NOT NULL,
+      team_new_volume REAL NOT NULL DEFAULT 0,
+      largest_branch_volume REAL NOT NULL DEFAULT 0,
+      small_area_new_volume REAL NOT NULL DEFAULT 0,
+      standard_lots REAL NOT NULL DEFAULT 0,
+      branch_json TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(member_id,biz_date)
+    );
+    CREATE TABLE IF NOT EXISTS promotion_rewards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      biz_date TEXT NOT NULL,
+      member_id INTEGER NOT NULL,
+      reward_type TEXT NOT NULL,
+      from_member_id INTEGER,
+      base_amount REAL NOT NULL DEFAULT 0,
+      standard_lots REAL NOT NULL DEFAULT 0,
+      rate REAL NOT NULL DEFAULT 0,
+      unit_price REAL NOT NULL DEFAULT 0,
+      amount REAL NOT NULL DEFAULT 0,
+      remark TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(biz_date,member_id,reward_type,from_member_id)
+    );
+    CREATE TABLE IF NOT EXISTS upgrade_bonuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id INTEGER NOT NULL,
+      from_level TEXT,
+      to_level TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      qualified_at TEXT NOT NULL,
+      hold_until TEXT NOT NULL,
+      paid_at TEXT,
+      remark TEXT DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS notification_campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      type TEXT DEFAULT 'system',
+      is_popup INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS notification_popup_views (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      notification_id INTEGER NOT NULL,
+      popup_date TEXT NOT NULL,
+      viewed_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(user_id,notification_id,popup_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_team_volume_date ON daily_team_volume(biz_date,member_id);
+    CREATE INDEX IF NOT EXISTS idx_promotion_rewards_member ON promotion_rewards(member_id,biz_date);
+    CREATE INDEX IF NOT EXISTS idx_upgrade_bonus_due ON upgrade_bonuses(status,hold_until);
     CREATE TABLE IF NOT EXISTS deposit_addresses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       network TEXT NOT NULL,
@@ -415,6 +434,12 @@ export function initDb() {
   ensureColumn('follows', 'closed_reason', 'TEXT');
   ensureColumn('transactions', 'review_note', "TEXT DEFAULT ''");
   ensureColumn('quotes', 'updated_at', "TEXT DEFAULT ''");
+  ensureColumn('users', 'level_fail_months', 'INTEGER DEFAULT 0');
+  ensureColumn('users', 'level_checked_month', "TEXT DEFAULT ''");
+  ensureColumn('users', 'level_since', 'TEXT');
+  ensureColumn('notifications', 'is_popup', 'INTEGER DEFAULT 0');
+  ensureColumn('notifications', 'popup_date', "TEXT DEFAULT ''");
+  ensureColumn('notifications', 'campaign_id', 'INTEGER');
   ensureColumn('transactions', 'deposit_uid', "TEXT DEFAULT ''");
   ensureColumn('transactions', 'payment_qr', "TEXT DEFAULT ''");
   ensureColumn('transactions', 'currency', "TEXT DEFAULT 'USDT'");
@@ -465,23 +490,28 @@ export function initDb() {
       .run(process.env.ADMIN_USERNAME || 'admin', bcrypt.hashSync(initialPassword, 10), 'superadmin');
   }
 
-  const rateCount = db.prepare('SELECT COUNT(*) c FROM commission_rates').get().c;
-  if (rateCount === 0) {
-    const st = db.prepare('INSERT OR REPLACE INTO commission_rates (level, rate) VALUES (?,?)');
-    st.run(1, 20); st.run(2, 12); st.run(3, 8);
+  const agentLevelCount = db.prepare('SELECT COUNT(*) c FROM agent_level_config').get().c;
+  if (agentLevelCount === 0) {
+    const st = db.prepare('INSERT INTO agent_level_config (level,level_name,direct_valid_required,small_area_required,need_v4_count,direct_rate,lot_price,same_level_rate,upgrade_bonus,status) VALUES (?,?,?,?,?,?,?,?,?,1)');
+    st.run(1,'V1 体验代理',0,0,0,0.05,5,0,0);
+    st.run(2,'V2 初级代理',3,1000,0,0.10,15,0.03,50);
+    st.run(3,'V3 中级代理',6,10000,0,0.15,20,0.05,500);
+    st.run(4,'V4 高级代理',10,100000,0,0.20,28,0.08,6000);
+    st.run(5,'V5 节点代理',15,300000,2,0.30,38,0.10,20000);
   }
+  db.prepare("UPDATE users SET user_level='V1' WHERE user_level IS NULL OR user_level='' OR user_level='L0'").run();
+  db.prepare("UPDATE users SET user_level='V2' WHERE user_level='L1'").run();
+  db.prepare("UPDATE users SET user_level='V3' WHERE user_level='L2'").run();
+  db.prepare("UPDATE users SET user_level='V4' WHERE user_level='L3'").run();
 
   if (process.env.SEED_DEMO_DATA === 'true') {
     seedUsers();
     seedRooms();
     seedProjects();
     seedTransactions();
-    seedKyc();
-    seedCommissions();
-  }
+    seedKyc();  }
   seedContent();
   if (process.env.SEED_DEMO_DATA === 'true') seedQuotes();
-  db.exec('DROP TABLE IF EXISTS platform_pool; DROP TABLE IF EXISTS fund_pool;');
 }
 
 function requireRandomPassword() {
@@ -579,21 +609,6 @@ function seedQuotes() {
   qs.forEach(q => ins.run(...q));
   const apiSt = db.prepare("UPDATE quotes SET api_id = ? WHERE symbol = ?");
   apiSt.run('bitcoin', 'BTC/USDT'); apiSt.run('ethereum', 'ETH/USDT'); apiSt.run('solana', 'SOL/USDT');
-}
-
-function seedCommissions() {
-  const c = db.prepare('SELECT COUNT(*) c FROM commissions').get().c;
-  if (c > 0) return;
-  const ins = db.prepare(`INSERT INTO commissions (user_id,user_name,level,amount,rate,order_id) VALUES (?,?,?,?,?,?)`);
-  const comms = [
-    [1,'Alex Mercer',1,5000,0.20,'ORD-202608-001'],
-    [2,'陈伟强',1,2500,0.20,'ORD-202608-002'],
-    [3,'李思思',2,800,0.12,'ORD-202608-003'],
-    [5,'王芳',1,8800,0.20,'ORD-202608-004'],
-    [7,'赵雨欣',2,1500,0.12,'ORD-202608-005'],
-    [8,'孙浩',3,420,0.08,'ORD-202608-006'],
-  ];
-  comms.forEach(c2 => ins.run(...c2));
 }
 
 function seedContent() {

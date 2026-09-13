@@ -194,6 +194,7 @@ function toUser(u) {
   };
 }
 const now = () => new Date().toISOString();
+function round2(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100; }
 
 // ---------- auth ----------
 app.post('/api/auth/login', (req, res) => {
@@ -229,7 +230,7 @@ app.get('/api/dashboard/stats', auth, (req, res) => {
   const pendingDeposits = db.prepare("SELECT COUNT(*) c FROM transactions WHERE type='deposit' AND status='pending'").get().c;
   const pendingWithdraws = db.prepare("SELECT COUNT(*) c FROM transactions WHERE type='withdraw' AND status='pending'").get().c;
   const pendingKyc = db.prepare("SELECT COUNT(*) c FROM kyc WHERE status='pending'").get().c;
-  const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions').get().s;
+  const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards').get().s;
   const netFlow = totalDeposits - totalWithdraws;
   res.json({
     totalUsers, newUsers7d, activeRooms, totalDeposits, totalWithdraws, netFlow,
@@ -259,7 +260,7 @@ app.post('/api/users', auth, (req, res) => {
   if (rawPassword.length < 8) return res.status(400).json({ error: '新用户密码至少8位' });
   const passwordHash = bcrypt.hashSync(rawPassword, 10);
   db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,total_assets,available,total_income,frozen_balance,user_level,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(uid, b.name || '', b.phone || '', b.email || '', passwordHash, Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'L0', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, b.userLevel === 'L0' ? 0 : Number(b.level)||1, b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
+    .run(uid, b.name || '', b.phone || '', b.email || '', passwordHash, Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'V1', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, levelNumber(b.userLevel || 'V1'), b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
   addAudit('admin', req.admin.username, 'CREATE_USER', 'user', uid, { uid, name: b.name || '' });
   res.json({ ok: true, uid });
 });
@@ -273,7 +274,7 @@ app.put('/api/users/:id', auth, (req, res) => {
     ? bcrypt.hashSync(String(b.password), 10)
     : cur.password;
   db.prepare(`UPDATE users SET name=?, phone=?, email=?, password=?, balance=?, total_assets=?, available=?, total_income=?, frozen_balance=?, user_level=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
-    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, passwordHash, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? (b.userLevel === 'L0' ? 0 : b.userLevel === 'L1' ? 1 : b.userLevel === 'L2' ? 2 : 3) : cur.level, id);
+    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, passwordHash, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? levelNumber(b.userLevel) : cur.level, id);
   addAudit('admin', req.admin.username, 'UPDATE_USER', 'user', id, { passwordChanged: b.password !== undefined && String(b.password) !== '' });
   res.json({ ok: true });
 });
@@ -428,18 +429,58 @@ app.put('/api/kyc/:id/review', auth, (req, res) => {
   res.json(out);
 });
 
-// ---------- commissions (推广收益) ----------
-app.get('/api/commissions', auth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM commissions ORDER BY id DESC').all();
-  const rates = db.prepare('SELECT level, rate FROM commission_rates ORDER BY level').all();
-  res.json({ list: rows, rates });
+// ---------- V1-V5 推广收益 ----------
+app.get('/api/admin/agent-levels', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM agent_level_config ORDER BY level').all());
 });
-app.put('/api/commissions/rates', auth, (req, res) => {
-  const { rates } = req.body || {};
-  if (!Array.isArray(rates)) return res.status(400).json({ error: '参数错误' });
-  const st = db.prepare('INSERT OR REPLACE INTO commission_rates (level, rate) VALUES (?,?)');
-  rates.forEach(r => st.run(Number(r.level), Number(r.rate)));
+app.put('/api/admin/agent-levels/:level', auth, (req, res) => {
+  const level = levelNumber(req.params.level);
+  const b = req.body || {};
+  const cur = db.prepare('SELECT * FROM agent_level_config WHERE level=?').get(level);
+  if (!cur) return res.status(404).json({ error: '等级不存在' });
+  db.prepare(`UPDATE agent_level_config SET level_name=?,direct_valid_required=?,small_area_required=?,need_v4_count=?,direct_rate=?,lot_price=?,same_level_rate=?,upgrade_bonus=?,status=?,updated_at=datetime('now','localtime') WHERE level=?`)
+    .run(b.levelName ?? cur.level_name, b.directValidRequired ?? cur.direct_valid_required, b.smallAreaRequired ?? cur.small_area_required, b.needV4Count ?? cur.need_v4_count, b.directRate ?? cur.direct_rate, b.lotPrice ?? cur.lot_price, b.sameLevelRate ?? cur.same_level_rate, b.upgradeBonus ?? cur.upgrade_bonus, b.status ?? cur.status, level);
+  addAudit('admin', req.admin.username, 'UPDATE_AGENT_LEVEL', 'agent_level_config', level, b);
   res.json({ ok: true });
+});
+app.get('/api/admin/promotion-rewards', auth, (req, res) => {
+  const date = String(req.query.date || '').trim();
+  const type = String(req.query.type || '').trim();
+  let sql = 'SELECT r.*, u.uid, u.name FROM promotion_rewards r LEFT JOIN users u ON u.id=r.member_id WHERE 1=1';
+  const params = [];
+  if (date) { sql += ' AND r.biz_date=?'; params.push(date); }
+  if (type) { sql += ' AND r.reward_type=?'; params.push(type); }
+  sql += ' ORDER BY r.id DESC LIMIT 1000';
+  res.json(db.prepare(sql).all(...params));
+});
+app.get('/api/admin/upgrade-bonuses', auth, (req, res) => {
+  res.json(db.prepare('SELECT b.*, u.uid, u.name, u.user_level FROM upgrade_bonuses b LEFT JOIN users u ON u.id=b.member_id ORDER BY b.id DESC LIMIT 500').all());
+});
+app.get('/api/admin/daily-team-volume', auth, (req, res) => {
+  const date = String(req.query.date || businessDate()).trim();
+  res.json(db.prepare('SELECT v.*, u.uid, u.name, u.user_level FROM daily_team_volume v LEFT JOIN users u ON u.id=v.member_id WHERE v.biz_date=? ORDER BY v.small_area_new_volume DESC LIMIT 1000').all(date));
+});
+app.get('/api/admin/notification-campaigns', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM notification_campaigns ORDER BY id DESC LIMIT 200').all());
+});
+app.post('/api/admin/notifications/publish', auth, (req, res) => {
+  const b = req.body || {};
+  const title = String(b.title || '').trim();
+  const body = String(b.body || '').trim();
+  if (!title || !body) return res.status(400).json({ error: '通知标题和内容不能为空' });
+  const isPopup = b.isPopup ? 1 : 0;
+  const type = String(b.type || 'system');
+  const publishDate = businessDate();
+  const tx = db.transaction(() => {
+    const info = db.prepare('INSERT INTO notification_campaigns (title,body,type,is_popup,created_by) VALUES (?,?,?,?,?)').run(title, body, type, isPopup, req.admin.username);
+    const users = db.prepare("SELECT id FROM users WHERE status='active'").all();
+    const ins = db.prepare('INSERT INTO notifications (user_id,title,body,type,is_popup,popup_date,campaign_id) VALUES (?,?,?,?,?,?,?)');
+    for (const user of users) ins.run(user.id, title, body, type, isPopup, isPopup ? publishDate : '', info.lastInsertRowid);
+    addAudit('admin', req.admin.username, 'PUBLISH_NOTIFICATION', 'notification_campaign', info.lastInsertRowid, { title, isPopup, count: users.length });
+    return { id: info.lastInsertRowid, count: users.length };
+  });
+  const out = tx();
+  res.json({ ok: true, campaignId: out.id, recipients: out.count });
 });
 
 // ---------- content (前端页面内容) ----------
@@ -483,7 +524,7 @@ app.post('/api/public/register', (req, res) => {
     if (refUser) referrerId = refUser.id;
   }
   const passwordHash = bcrypt.hashSync(password, 10);
-  db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,referral_code,referrer_id,level,status,kyc_status) VALUES (?,?,?,?,?,0,?,?,1,'active','unverified')`)
+  db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,referral_code,referrer_id,level,user_level,status,kyc_status) VALUES (?,?,?,?,?,0,?,?,1,'V1','active','unverified')`)
     .run(uid, String(b.name || '').trim(), String(b.phone || '').trim(), String(b.email || '').trim(), passwordHash, ref, referrerId);
   const user = db.prepare('SELECT * FROM users WHERE uid=?').get(uid);
   const token = createUserSession(user, req);
@@ -574,38 +615,6 @@ app.get('/api/public/deposit-address', userAuth, (req, res) => {
   const row = db.prepare("SELECT id,network,currency,address,qr_url FROM deposit_addresses WHERE network=? AND currency=? AND status='active' ORDER BY RANDOM() LIMIT 1").get(network, currency);
   if (!row) return res.status(404).json({ error: '当前网络暂未配置可用充值地址' });
   res.json({ ...row, qrUrl: row.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(row.address)) });
-});
-
-app.post('/api/public/deposit/start', userAuth, (req, res) => {
-  if (!requireUsableAccount(req, res)) return;
-  const nowMs = Date.now();
-  db.prepare("UPDATE transactions SET status='expired', cancelled_at=datetime('now','localtime') WHERE user_id=? AND type='deposit' AND status IN ('draft','pending') AND expires_at<>'' AND expires_at<?").run(req.user.id, new Date(nowMs).toISOString());
-  const active = db.prepare("SELECT * FROM transactions WHERE user_id=? AND type='deposit' AND status IN ('draft','pending') AND expires_at>? ORDER BY id DESC LIMIT 1").get(req.user.id, new Date(nowMs).toISOString());
-  if (active) {
-    return res.json({
-      ok: true,
-      orderId: active.id,
-      txnId: active.txn_id,
-      amount: active.amount,
-      network: active.network,
-      currency: active.currency || 'USDT',
-      address: active.address,
-      qrUrl: active.payment_qr,
-      status: active.status,
-      expiresAt: active.expires_at,
-      resumed: true,
-    });
-  }
-  const network = String((req.body || {}).network || 'TRC20').trim();
-  const currency = String((req.body || {}).currency || 'USDT').trim();
-  const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND status='active' ORDER BY RANDOM() LIMIT 1").get(network, currency);
-  if (!addressRow) return res.status(404).json({ error: '当前网络暂未配置可用充值地址' });
-  const txn = 'TXN-' + Date.now() + Math.floor(Math.random() * 1000);
-  const expiresAt = new Date(nowMs + 15 * 60 * 1000).toISOString();
-  const qrUrl = addressRow.qr_url || ('/api/public/qrcode?text=' + encodeURIComponent(addressRow.address));
-  const info = db.prepare(`INSERT INTO transactions (txn_id,user_id,user_name,type,amount,network,address,title,subtitle,status,date,time,deposit_uid,payment_qr,currency,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(txn, req.user.id, req.user.name, 'deposit', 0, network, addressRow.address, 'USDT Deposit', '充值订单已创建', 'draft', new Date(nowMs).toISOString().slice(0, 10), new Date(nowMs).toTimeString().slice(0, 5), req.user.uid, qrUrl, currency, expiresAt);
-  res.json({ ok: true, orderId: info.lastInsertRowid, txnId: txn, amount: 0, network, currency, address: addressRow.address, qrUrl, status: 'draft', expiresAt, resumed: false });
 });
 
 app.post('/api/public/deposit', userAuth, (req, res) => {
@@ -756,36 +765,35 @@ app.get('/api/public/quotes', (req, res) => {
 
 app.get('/api/public/referral', userAuth, (req, res) => {
   const user = req.user;
-  const rates = db.prepare('SELECT level,rate FROM commission_rates ORDER BY level').all();
-  const team = db.prepare('SELECT COUNT(*) c FROM users WHERE referrer_id=?').get(user.id).c;
-  const commissions = db.prepare('SELECT * FROM commissions WHERE user_id=? ORDER BY id DESC LIMIT 20').all(user.id);
-  const totalCommission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id=?').get(user.id).s;
+  const configs = levelConfigMap();
   const metrics = computeMetrics(user.id);
   const frozen = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM invite_rewards WHERE referrer_uid=? AND status='frozen'").get(user.uid).s;
-  const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
-  const teamRewards = db.prepare('SELECT * FROM team_rewards WHERE uid=? ORDER BY id DESC LIMIT 50').all(user.uid);
-  const levelInfo = LEVEL_RULES[metrics.level];
+  const inviteRewards = db.prepare('SELECT * FROM invite_rewards WHERE referrer_uid=? ORDER BY id DESC LIMIT 100').all(user.uid);
+  const promotionRewards = db.prepare('SELECT * FROM promotion_rewards WHERE member_id=? ORDER BY id DESC LIMIT 100').all(user.id);
+  const upgradeBonuses = db.prepare('SELECT * FROM upgrade_bonuses WHERE member_id=? ORDER BY id DESC LIMIT 20').all(user.id);
+  const totalReward = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards WHERE member_id=?').get(user.id).s;
   res.json({
     code: user.referral_code,
     userLevel: metrics.level,
-    levelRule: levelInfo,
+    levelRule: getLevelRule(metrics.level, configs),
     directVerified: metrics.directVerified,
-    directCount: metrics.directIds.length,
+    directCount: metrics.directCount,
     teamSize: metrics.desc.length,
     personalVolume: metrics.personalVolume,
     teamVolume: metrics.teamTotalVolume,
     teamTotalVolume: metrics.teamTotalVolume,
-    largeAreaVolume: metrics.largestBranchVolume,
+    largeAreaVolume: metrics.largeAreaVolume,
     smallAreaVolume: metrics.smallAreaVolume,
     branchVolumes: metrics.branchVolumes,
+    savedV4: metrics.savedV4,
     nextLevel: metrics.nextLevel,
     progress: metrics.progress,
     frozenInviteRewards: frozen,
-    inviteRewards: inviteRewards.map((i) => ({ id: i.id, referredName: i.referred_name, amount: i.amount, status: i.status, createdAt: i.created_at })),
-    teamRewards: teamRewards.map((t) => ({ id: t.id, kind: t.kind, amount: t.amount, level: t.level, source: t.source, createdAt: t.created_at })),
-    totalCommission,
-    rates: rates.map((r) => ({ level: r.level, rate: r.rate })),
-    commissions: commissions.map((c2) => ({ id: c2.id, level: c2.level, amount: c2.amount, rate: c2.rate, orderId: c2.order_id, createdAt: c2.created_at })),
+    inviteRewards: inviteRewards.map((item) => ({ id: item.id, referredName: item.referred_name, amount: item.amount, status: item.status, createdAt: item.created_at })),
+    promotionRewards: promotionRewards.map((item) => ({ id: item.id, bizDate: item.biz_date, type: item.reward_type, amount: item.amount, baseAmount: item.base_amount, lots: item.standard_lots, rate: item.rate, unitPrice: item.unit_price, remark: item.remark, createdAt: item.created_at })),
+    upgradeBonuses: upgradeBonuses.map((item) => ({ id: item.id, fromLevel: item.from_level, toLevel: item.to_level, amount: item.amount, status: item.status, qualifiedAt: item.qualified_at, holdUntil: item.hold_until, paidAt: item.paid_at })),
+    totalReward,
+    levels: Object.values(configs),
   });
 });
 
@@ -810,9 +818,9 @@ app.get('/api/public/overview', userAuth, (req, res) => {
   const myCopyAlloc = follows.filter((f) => f.status === 'active').reduce((sum, f) => sum + Number(f.allocated || 0), 0);
   const myCopyPnl = follows.reduce((sum, f) => sum + (Number(f.equity || f.allocated || 0) - Number(f.allocated || 0)), 0);
   const myInvest = investments.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-  const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM commissions WHERE user_id=?').get(user.id).s;
+  const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards WHERE member_id=?').get(user.id).s;
   const todayProfit = db.prepare('SELECT COALESCE(SUM(customer_share),0) s FROM yield_records WHERE uid=? AND settle_date=?').get(user.uid, businessDate()).s;
-  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, userLevel: user.user_level || 'L0', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
+  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, userLevel: user.user_level || 'V1', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
 });
 
 app.post('/api/public/invest', userAuth, (req, res) => {
@@ -842,6 +850,19 @@ app.post('/api/public/invest', userAuth, (req, res) => {
 });
 
 // ---------- user security, notifications, support and lead trader ----------
+app.get('/api/public/notifications/today-popup', userAuth, (req, res) => {
+  const popupDate = businessDate();
+  const row = db.prepare(`
+    SELECT n.* FROM notifications n
+    WHERE n.user_id=? AND n.is_popup=1 AND n.popup_date=?
+      AND NOT EXISTS (SELECT 1 FROM notification_popup_views v WHERE v.user_id=n.user_id AND v.notification_id=n.id AND v.popup_date=n.popup_date)
+    ORDER BY n.id DESC LIMIT 1
+  `).get(req.user.id, popupDate);
+  if (!row) return res.json({ ok: true, notification: null });
+  db.prepare('INSERT OR IGNORE INTO notification_popup_views (user_id,notification_id,popup_date) VALUES (?,?,?)').run(req.user.id, row.id, popupDate);
+  res.json({ ok: true, notification: row });
+});
+
 app.get('/api/public/notifications', userAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user.id));
 });
@@ -956,7 +977,16 @@ app.get('/api/public/yields', userAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM yield_records WHERE uid=? ORDER BY id DESC').all(req.user.uid));
 });
 app.get('/api/public/rewards', userAuth, (req, res) => {
-  res.json(db.prepare('SELECT * FROM referral_rewards WHERE to_uid=? ORDER BY id DESC').all(req.user.uid));
+  const rows = db.prepare('SELECT * FROM promotion_rewards WHERE member_id=? ORDER BY id DESC LIMIT 200').all(req.user.id);
+  res.json(rows.map((item) => ({
+    ...item,
+    rewardType: item.reward_type,
+    baseAmount: item.base_amount,
+    standardLots: item.standard_lots,
+    unitPrice: item.unit_price,
+    bizDate: item.biz_date,
+    createdAt: item.created_at
+  })));
 });
 app.get('/api/public/groups', userAuth, (req, res) => {
   res.json(db.prepare('SELECT g.* FROM groups g JOIN group_members m ON m.group_id=g.id WHERE m.uid=? ORDER BY g.id DESC').all(req.user.uid));
@@ -976,12 +1006,84 @@ app.post('/api/public/groups/:id/message', userAuth, (req, res) => {
 });
 
 // ================= 等级体系 / 团队 =================
-const LEVEL_RULES = {
-  L0: { directRate: 0.05, teamRate: 0, needDirect: 0, needVolume: 0 },
-  L1: { directRate: 0.10, teamRate: 0.02, needDirect: 10, needVolume: 10000 },
-  L2: { directRate: 0.20, teamRate: 0.04, needDirect: 20, needVolume: 100000 },
-  L3: { directRate: 0.30, teamRate: 0.06, needDirect: 30, needVolume: 1000000 },
-};
+function levelNumber(value) {
+  const match = String(value || 'V1').toUpperCase().match(/V(\d)/);
+  return Math.max(1, Math.min(5, match ? Number(match[1]) : 1));
+}
+
+function levelName(value) {
+  return 'V' + levelNumber(value);
+}
+
+function levelConfigMap() {
+  const rows = db.prepare('SELECT * FROM agent_level_config WHERE status=1 ORDER BY level').all();
+  const map = {};
+  for (const row of rows) {
+    map[row.level] = {
+      level: row.level,
+      levelName: row.level_name,
+      directRequired: Number(row.direct_valid_required || 0),
+      smallAreaRequired: Number(row.small_area_required || 0),
+      needV4Count: Number(row.need_v4_count || 0),
+      directRate: Number(row.direct_rate || 0),
+      lotPrice: Number(row.lot_price || 0),
+      sameLevelRate: Number(row.same_level_rate || 0),
+      upgradeBonus: Number(row.upgrade_bonus || 0),
+    };
+  }
+  return map;
+}
+
+function getLevelRule(value, map) {
+  const rules = map || levelConfigMap();
+  return rules[levelNumber(value)] || rules[1];
+}
+
+function getUplineChain(memberId) {
+  const chain = [];
+  let current = db.prepare('SELECT referrer_id FROM users WHERE id=?').get(memberId);
+  const seen = new Set([Number(memberId)]);
+  while (current && current.referrer_id && !seen.has(Number(current.referrer_id)) && chain.length < 100) {
+    const upId = Number(current.referrer_id);
+    chain.push(upId);
+    seen.add(upId);
+    current = db.prepare('SELECT referrer_id FROM users WHERE id=?').get(upId);
+  }
+  return chain;
+}
+
+function directValidIds(memberId) {
+  return db.prepare(`
+    SELECT u.id
+    FROM users u
+    WHERE u.referrer_id=?
+      AND u.kyc_status='verified'
+      AND u.status='active'
+      AND EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.user_id=u.id AND t.type='deposit' AND t.status='approved' AND t.amount>0
+      )
+  `).all(memberId).map((row) => Number(row.id));
+}
+
+function activePrincipalOf(userIds) {
+  if (!userIds.length) return 0;
+  const marks = userIds.map(() => '?').join(',');
+  return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...userIds).s || 0);
+}
+
+function dailyNewVolumeOf(userIds, bizDate) {
+  if (!userIds.length) return 0;
+  const marks = userIds.map(() => '?').join(',');
+  return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE date(created_at)=? AND user_id IN (" + marks + ")").get(bizDate, ...userIds).s || 0);
+}
+
+function v4DescendantCount(memberId) {
+  const desc = getDescendants(memberId);
+  if (!desc.length) return 0;
+  const marks = desc.map(() => '?').join(',');
+  return Number(db.prepare("SELECT COUNT(*) c FROM users WHERE id IN (" + marks + ") AND user_level='V4' AND status='active'").get(...desc).c || 0);
+}
 
 function getDescendants(userId) {
   const res = [];
@@ -999,59 +1101,123 @@ function getDirectIds(userId) {
   return db.prepare('SELECT id FROM users WHERE referrer_id = ?').all(userId).map(r => r.id);
 }
 
-function activePrincipalOf(userIds) {
-  if (!userIds.length) return 0;
-  const marks = userIds.map(() => '?').join(',');
-  return Number(db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE status='active' AND user_id IN (" + marks + ")").get(...userIds).s || 0);
-}
-
 function computeMetrics(userId) {
-  const directVerified = db.prepare("SELECT COUNT(*) c FROM users WHERE referrer_id=? AND kyc_status='verified'").get(userId).c;
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+  const configs = levelConfigMap();
   const directIds = getDirectIds(userId);
+  const directValid = directValidIds(userId);
   const desc = getDescendants(userId);
   const personalVolume = activePrincipalOf([userId]);
   const teamTotalVolume = activePrincipalOf(desc);
   const branchVolumes = directIds.map((id) => ({ memberId: id, volume: activePrincipalOf([id, ...getDescendants(id)]) }));
-  const largestBranchVolume = branchVolumes.reduce((max, branch) => Math.max(max, branch.volume), 0);
+  const largestBranchVolume = branchVolumes.reduce((max, branch) => Math.max(max, Number(branch.volume || 0)), 0);
   const smallAreaVolume = Math.max(0, teamTotalVolume - largestBranchVolume);
-
-  const rules = [
-    { level: 'L1', needDirect: 10, needSmallVolume: 10000, directRate: 0.10, teamRate: 0.02 },
-    { level: 'L2', needDirect: 20, needSmallVolume: 100000, directRate: 0.20, teamRate: 0.04 },
-    { level: 'L3', needDirect: 30, needSmallVolume: 1000000, directRate: 0.30, teamRate: 0.06 },
-  ];
-  let level = 'L0';
-  if (directVerified >= 30 && smallAreaVolume >= 1000000) level = 'L3';
-  else if (directVerified >= 20 && smallAreaVolume >= 100000) level = 'L2';
-  else if (directVerified >= 10 && smallAreaVolume >= 10000) level = 'L1';
-
-  const nextLevel = rules.find((rule) => rule.level === (level === 'L0' ? 'L1' : level === 'L1' ? 'L2' : level === 'L2' ? 'L3' : '')) || null;
-  const directProgress = nextLevel ? Math.min(100, directVerified / nextLevel.needDirect * 100) : 100;
-  const volumeProgress = nextLevel ? Math.min(100, smallAreaVolume / nextLevel.needSmallVolume * 100) : 100;
+  const savedV4 = v4DescendantCount(userId);
+  let qualifiedLevel = 1;
+  for (let level = 5; level >= 1; level--) {
+    const rule = configs[level];
+    if (!rule) continue;
+    if (directValid.length >= rule.directRequired && smallAreaVolume >= rule.smallAreaRequired && savedV4 >= rule.needV4Count) {
+      qualifiedLevel = level;
+      break;
+    }
+  }
+  const currentLevel = levelNumber(user ? user.user_level : 'V1');
+  const nextRule = currentLevel < 5 ? configs[currentLevel + 1] : null;
+  const directProgress = nextRule ? Math.min(100, directValid.length / nextRule.directRequired * 100) : 100;
+  const volumeProgress = nextRule ? Math.min(100, smallAreaVolume / nextRule.smallAreaRequired * 100) : 100;
+  const v4Progress = nextRule && nextRule.needV4Count > 0 ? Math.min(100, savedV4 / nextRule.needV4Count * 100) : null;
   return {
-    level,
-    directVerified,
-    volume: teamTotalVolume,
+    level: 'V' + currentLevel,
+    currentLevel,
+    qualifiedLevel,
+    qualifiedLevelName: 'V' + qualifiedLevel,
+    directCount: directIds.length,
+    directVerified: directValid.length,
+    directIds,
+    directValidIds: directValid,
+    desc,
     personalVolume,
     teamTotalVolume,
-    largestBranchVolume,
-    smallAreaVolume,
+    volume: teamTotalVolume,
     branchVolumes,
-    directIds,
-    desc,
-    nextLevel,
+    largestBranchVolume,
+    largeAreaVolume: largestBranchVolume,
+    smallAreaVolume,
+    savedV4,
+    nextLevel: nextRule,
     progress: {
       direct: Number(directProgress.toFixed(1)),
       volume: Number(volumeProgress.toFixed(1)),
-      overall: nextLevel ? Number(((directProgress + volumeProgress) / 2).toFixed(1)) : 100,
+      v4: v4Progress === null ? 100 : Number(v4Progress.toFixed(1)),
+      overall: nextRule ? Number((([directProgress, volumeProgress].concat(v4Progress === null ? [] : [v4Progress])).reduce((a, b) => a + b, 0) / ([directProgress, volumeProgress].concat(v4Progress === null ? [] : [v4Progress])).length).toFixed(1)) : 100,
     },
   };
 }
 
+function reconcileAgentLevel(user, metrics, bizDate) {
+  const configs = levelConfigMap();
+  const currentLevel = levelNumber(user.user_level);
+  const qualifiedLevel = metrics.qualifiedLevel;
+  const nowIso = new Date().toISOString();
+  if (qualifiedLevel > currentLevel) {
+    db.prepare('UPDATE users SET user_level=?, level_since=?, level_fail_months=0 WHERE id=?').run('V' + qualifiedLevel, nowIso, user.id);
+    for (let level = currentLevel + 1; level <= qualifiedLevel; level++) {
+      const rule = configs[level];
+      if (!rule || rule.upgradeBonus <= 0) continue;
+      const exists = db.prepare("SELECT id FROM upgrade_bonuses WHERE member_id=? AND to_level=? AND status IN ('pending','paid')").get(user.id, 'V' + level);
+      if (!exists) {
+        const holdUntil = new Date(Date.now() + 30 * 86400000).toISOString();
+        db.prepare('INSERT INTO upgrade_bonuses (member_id,from_level,to_level,amount,status,qualified_at,hold_until) VALUES (?,?,?,?,?,?,?)').run(user.id, 'V' + (level - 1), 'V' + level, rule.upgradeBonus, 'pending', bizDate, holdUntil);
+      }
+    }
+    user.user_level = 'V' + qualifiedLevel;
+    return;
+  }
+  const month = String(bizDate).slice(0, 7);
+  if (qualifiedLevel < currentLevel) {
+    if (String(user.level_checked_month || '') !== month) {
+      const failMonths = Number(user.level_fail_months || 0) + 1;
+      if (failMonths >= 2) {
+        db.prepare("UPDATE upgrade_bonuses SET status='cancelled', remark=? WHERE member_id=? AND status='pending' AND CAST(SUBSTR(to_level,2) AS INTEGER)>?").run('连续2个月未达标降级，晋级奖失效', user.id, qualifiedLevel);
+        db.prepare('UPDATE users SET user_level=?, level_fail_months=0, level_checked_month=?, level_since=? WHERE id=?').run('V' + qualifiedLevel, month, nowIso, user.id);
+        user.user_level = 'V' + qualifiedLevel;
+      } else {
+        db.prepare('UPDATE users SET level_fail_months=?, level_checked_month=? WHERE id=?').run(failMonths, month, user.id);
+      }
+    }
+    return;
+  }
+  db.prepare('UPDATE users SET level_fail_months=0, level_checked_month=? WHERE id=?').run(month, user.id);
+}
+
+function payDueUpgradeBonuses() {
+  const rows = db.prepare(`
+    SELECT b.*, u.user_level, u.status, u.emergency_frozen, u.level_since
+    FROM upgrade_bonuses b JOIN users u ON u.id=b.member_id
+    WHERE b.status='pending' AND b.hold_until<=?
+  `).all(new Date().toISOString());
+  for (const bonus of rows) {
+    if (bonus.user_level !== bonus.to_level || bonus.status !== 'active' || bonus.emergency_frozen) continue;
+    const levelSince = new Date(bonus.level_since || 0).getTime();
+    if (!levelSince || levelSince > new Date(bonus.hold_until).getTime()) continue;
+    const tx = db.transaction(() => {
+      const fresh = db.prepare("SELECT * FROM upgrade_bonuses WHERE id=? AND status='pending'").get(bonus.id);
+      if (!fresh) return;
+      db.prepare('UPDATE upgrade_bonuses SET status=?, paid_at=? WHERE id=?').run('paid', new Date().toISOString(), bonus.id);
+      addAvailable(bonus.member_id, Number(bonus.amount));
+      addNotification(bonus.member_id, '晋级奖励已发放', bonus.to_level + ' 晋级奖励 ' + Number(bonus.amount).toFixed(2) + ' USDT 已到账。', 'upgrade');
+    });
+    tx();
+  }
+}
+
 function refreshUserLevel(userId) {
-  const m = computeMetrics(userId);
-  db.prepare('UPDATE users SET user_level = ? WHERE id = ?').run(m.level, userId);
-  return m;
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(userId);
+  if (!user) return null;
+  const metrics = computeMetrics(userId);
+  reconcileAgentLevel(user, metrics, businessDate());
+  return computeMetrics(userId);
 }
 
 function addAvailable(userId, amt) {
@@ -1118,7 +1284,8 @@ function roomYieldForDate(room, bizDate) {
 }
 
 function settleDaily(req) {
-  const bizDate = businessDate();
+  const isManualSettlement = !!(req && req.query);
+  const bizDate = isManualSettlement ? businessDate() : businessDate(new Date(Date.now() - 12 * 60 * 60 * 1000));
   const force = !!(req && req.query && req.query.force);
   const done = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE settle_date=?').get(bizDate).c;
   if (done > 0 && !force) return { skipped: true, count: 0, reason: '今天已结算', bizDate };
@@ -1168,39 +1335,97 @@ function settleDaily(req) {
     }
     count++;
   }
-  distributeLevelRewards(profitByUid, bizDate);
+  settleAgentPromotion(profitByUid, bizDate);
   return { skipped: false, count, bizDate, timezone: APP_TZ };
 }
 
-function distributeLevelRewards(profitByUid, date) {
-  const referrers = db.prepare('SELECT * FROM users WHERE id IN (SELECT DISTINCT referrer_id FROM users WHERE referrer_id IS NOT NULL)').all();
-  for (const u of referrers) {
-    const m = computeMetrics(u.id);
-    db.prepare('UPDATE users SET user_level=? WHERE id=?').run(m.level, u.id);
-    const rule = LEVEL_RULES[m.level];
+function settleAgentPromotion(profitByUid, bizDate) {
+  const configs = levelConfigMap();
+  const users = db.prepare("SELECT * FROM users WHERE status='active'").all();
+  const snaps = new Map();
+
+  for (const user of users) {
+    const metrics = computeMetrics(user.id);
+    reconcileAgentLevel(user, metrics, bizDate);
+    const fresh = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
+    const dailyTeamVolume = dailyNewVolumeOf(metrics.desc, bizDate);
+    const dailyBranches = metrics.directIds.map((id) => ({ memberId: id, volume: dailyNewVolumeOf([id, ...getDescendants(id)], bizDate) }));
+    const dailyLargest = dailyBranches.reduce((max, branch) => Math.max(max, Number(branch.volume || 0)), 0);
+    const dailySmall = Math.max(0, dailyTeamVolume - dailyLargest);
+    const standardLots = Number((dailySmall / 2000).toFixed(4));
+    db.prepare(`INSERT INTO daily_team_volume (member_id,biz_date,team_new_volume,largest_branch_volume,small_area_new_volume,standard_lots,branch_json)
+      VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(member_id,biz_date) DO UPDATE SET team_new_volume=excluded.team_new_volume,largest_branch_volume=excluded.largest_branch_volume,small_area_new_volume=excluded.small_area_new_volume,standard_lots=excluded.standard_lots,branch_json=excluded.branch_json`)
+      .run(user.id, bizDate, dailyTeamVolume, dailyLargest, dailySmall, standardLots, JSON.stringify(dailyBranches));
+    snaps.set(user.id, { user: fresh, metrics, dailyTeamVolume, dailyLargest, dailySmall, standardLots });
+  }
+
+  const rewards = [];
+  const lotIncome = new Map();
+  const addReward = (reward) => {
+    if (reward && Number(reward.amount) > 0) rewards.push(reward);
+  };
+
+  for (const [memberId, snap] of snaps) {
+    const rule = getLevelRule(snap.user.user_level, configs);
     let directProfit = 0;
-    for (const did of m.directIds) {
-      const du = db.prepare('SELECT uid FROM users WHERE id=?').get(did);
-      if (du && profitByUid[du.uid]) directProfit += profitByUid[du.uid];
+    if (snap.metrics.directIds.length) {
+      const marks = snap.metrics.directIds.map(() => '?').join(',');
+      directProfit = Number(db.prepare("SELECT COALESCE(SUM(customer_share),0) s FROM yield_records WHERE settle_date=? AND customer_share>0 AND uid IN (SELECT uid FROM users WHERE id IN (" + marks + "))").get(bizDate, ...snap.metrics.directIds).s || 0);
     }
-    const directAmt = Number((directProfit * rule.directRate).toFixed(4));
-    let teamProfit = 0;
-    for (const did of m.desc) {
-      const du = db.prepare('SELECT uid FROM users WHERE id=?').get(did);
-      if (du && profitByUid[du.uid]) teamProfit += profitByUid[du.uid];
-    }
-    const teamAmt = Number((teamProfit * rule.teamRate).toFixed(4));
-    if (directAmt > 0) {
-      addAvailable(u.id, directAmt);
-      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'direct', directAmt, '直推跟单奖励 ' + date);
-      addNotification(u.id, '直推跟单奖励到账', directAmt.toFixed(4) + ' USDT 已进入可用余额。', 'reward');
-    }
-    if (teamAmt > 0) {
-      addAvailable(u.id, teamAmt);
-      db.prepare('INSERT INTO team_rewards (uid,user_name,level,kind,amount,source) VALUES (?,?,?,?,?,?)').run(u.uid, u.name, m.level, 'team', teamAmt, '团队收益奖励 ' + date);
-      addNotification(u.id, '团队收益奖励到账', teamAmt.toFixed(4) + ' USDT 已进入可用余额。', 'reward');
+    const directAmount = round2(directProfit * rule.directRate);
+    addReward({ bizDate, memberId, type: 'direct_profit', fromMemberId: null, baseAmount: round2(directProfit), lots: 0, rate: rule.directRate, unitPrice: 0, amount: directAmount, remark: '一代直推当日净利润 ' + round2(directProfit).toFixed(2) + ' × ' + (rule.directRate * 100).toFixed(0) + '%' });
+
+    const lotAmount = round2(snap.standardLots * rule.lotPrice);
+    addReward({ bizDate, memberId, type: 'lot_bonus', fromMemberId: null, baseAmount: snap.dailySmall, lots: snap.standardLots, rate: 0, unitPrice: rule.lotPrice, amount: lotAmount, remark: '小区新增跟单业绩 ' + snap.dailySmall.toFixed(2) + ' ÷ 2000 × ' + rule.lotPrice + ' USD/手' });
+    if (lotAmount > 0) lotIncome.set(memberId, round2((lotIncome.get(memberId) || 0) + lotAmount));
+  }
+
+  const sortedIds = Array.from(snaps.keys()).sort((a, b) => a - b);
+  for (const originId of sortedIds) {
+    const origin = snaps.get(originId);
+    if (!origin || origin.standardLots <= 0) continue;
+    let previousPrice = getLevelRule(origin.user.user_level, configs).lotPrice;
+    for (const uplineId of getUplineChain(originId)) {
+      const upline = snaps.get(uplineId);
+      if (!upline) continue;
+      const uplinePrice = getLevelRule(upline.user.user_level, configs).lotPrice;
+      if (uplinePrice > previousPrice) {
+        const diff = uplinePrice - previousPrice;
+        const amount = round2(diff * origin.standardLots);
+        addReward({ bizDate, memberId: uplineId, type: 'differential', fromMemberId: originId, baseAmount: 0, lots: origin.standardLots, rate: 0, unitPrice: diff, amount, remark: '级差 ' + uplinePrice + '-' + previousPrice + '=' + diff + ' USD/手 × ' + origin.standardLots.toFixed(4) + ' 手' });
+        if (amount > 0) lotIncome.set(uplineId, round2((lotIncome.get(uplineId) || 0) + amount));
+        previousPrice = uplinePrice;
+      }
     }
   }
+
+  for (const childId of sortedIds) {
+    const child = snaps.get(childId);
+    if (!child || !child.user.referrer_id) continue;
+    const parent = snaps.get(Number(child.user.referrer_id));
+    if (!parent || levelNumber(child.user.user_level) !== levelNumber(parent.user.user_level)) continue;
+    const childLevel = levelNumber(child.user.user_level);
+    if (childLevel < 2) continue;
+    const base = round2(lotIncome.get(childId) || 0);
+    const rule = getLevelRule(parent.user.user_level, configs);
+    const amount = round2(base * rule.sameLevelRate);
+    addReward({ bizDate, memberId: parent.user.id, type: 'same_level', fromMemberId: childId, baseAmount: base, lots: 0, rate: rule.sameLevelRate, unitPrice: 0, amount, remark: '同级团队手数返佣 ' + base.toFixed(2) + ' × ' + (rule.sameLevelRate * 100).toFixed(0) + '%' });
+  }
+
+  const tx = db.transaction(() => {
+    for (const reward of rewards) {
+      const exists = db.prepare('SELECT id FROM promotion_rewards WHERE biz_date=? AND member_id=? AND reward_type=? AND IFNULL(from_member_id,0)=IFNULL(?,0)').get(reward.bizDate, reward.memberId, reward.type, reward.fromMemberId);
+      if (exists) continue;
+      db.prepare('INSERT INTO promotion_rewards (biz_date,member_id,reward_type,from_member_id,base_amount,standard_lots,rate,unit_price,amount,remark) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(reward.bizDate, reward.memberId, reward.type, reward.fromMemberId, reward.baseAmount, reward.lots, reward.rate, reward.unitPrice, reward.amount, reward.remark);
+      addAvailable(reward.memberId, reward.amount);
+      addNotification(reward.memberId, '推广奖励到账', reward.remark + '，奖励 ' + reward.amount.toFixed(4) + ' USDT。', 'reward');
+    }
+  });
+  tx();
+  payDueUpgradeBonuses();
+  return rewards.length;
 }
 
 // 定时结算：按新加坡时区每天 06:00 执行一次
@@ -1222,7 +1447,7 @@ app.get('/api/admin/yields', auth, (req, res) => {
 });
 
 app.get('/api/admin/team-rewards', auth, (req, res) => {
-  res.json(db.prepare('SELECT * FROM team_rewards ORDER BY id DESC LIMIT 200').all());
+  res.json(db.prepare(`SELECT r.*, u.uid, u.name, u.user_level FROM promotion_rewards r LEFT JOIN users u ON u.id=r.member_id ORDER BY r.id DESC LIMIT 200`).all());
 });
 
 app.get('/api/admin/invite-rewards', auth, (req, res) => {
@@ -1387,7 +1612,7 @@ app.get('/api/admin/team', auth, (req, res) => {
   for (const u of users) {
     const m = computeMetrics(u.id);
     const direct = db.prepare('SELECT uid, name, kyc_status, user_level FROM users WHERE referrer_id = ?').all(u.id);
-    out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'L0', calcLevel: m.level, directVerified: m.directVerified, personalVolume: m.personalVolume, largeAreaVolume: m.largestBranchVolume, smallAreaVolume: m.smallAreaVolume, teamVolume: m.teamTotalVolume, teamTotalVolume: m.teamTotalVolume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
+    out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'V1', calcLevel: m.level, directVerified: m.directVerified, personalVolume: m.personalVolume, largeAreaVolume: m.largestBranchVolume, smallAreaVolume: m.smallAreaVolume, teamVolume: m.teamTotalVolume, teamTotalVolume: m.teamTotalVolume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
   }
   res.json(out);
 });
@@ -1418,9 +1643,6 @@ app.delete('/api/admin/deposit-addresses/:id', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/admin/fund-pool', auth, (req, res) => {
-  res.json({ balance: 0, discontinued: true, message: '基金池已取消，推广奖励由平台运营账户直接发放' });
-});
 app.get('/api/admin/support-threads', auth, (req, res) => {
   const rows = db.prepare(`SELECT t.*, u.uid, u.name, (SELECT COUNT(*) FROM support_messages m WHERE m.thread_id=t.id) message_count FROM support_threads t LEFT JOIN users u ON u.id=t.user_id ORDER BY t.updated_at DESC`).all();
   res.json(rows);

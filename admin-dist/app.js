@@ -76,6 +76,7 @@ const NAV = [
   ['quotes', '💹', '行情品种'],
   ['wallet', '🏦', '钱包配置'],
   ['team', '👑', '推荐团队'],
+  ['notices', '📢', '通知发布'],
   ['support', '💬', '客服工单'],
   ['leads', '🎯', '带单审核'],
   ['content', '🖼️', '内容管理'],
@@ -130,7 +131,7 @@ function loadView() {
   const root = $('#viewRoot');
   if (!root) return;
   root.innerHTML = '<div class="empty">加载中...</div>';
-  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, support: loadSupport, leads: loadLeads, content: loadContent, audit: loadAudit, settings: loadSettings }[state.view];
+  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, notices: loadNotices, support: loadSupport, leads: loadLeads, content: loadContent, audit: loadAudit, settings: loadSettings }[state.view];
   if (fn) fn(root);
 }/* ---------- Dashboard ---------- */
 async function loadDashboard(root) {
@@ -190,7 +191,7 @@ async function loadUsers(root) {
             <thead><tr><th>UID</th><th>姓名</th><th>联系方式</th><th>资产</th><th>冻结</th><th>等级</th><th>密码状态</th><th>邀请码</th><th>实名</th><th>操作</th></tr></thead>
             <tbody>${users.map(u => `<tr>
               <td>${esc(u.uid)}</td><td><b>${esc(u.name)}</b></td><td>${esc(u.phone)}<br><span style="color:#94a3b8;font-size:12px;">${esc(u.email)}</span></td>
-              <td>${fmtMoney(u.balance)}</td><td style="color:var(--amber)">${fmtMoney(u.frozen_balance || 0)}</td><td><span class="pill ${(u.user_level||'L0')==='L0'?'gray':'indigo'}">${esc(u.user_level || 'L0')}</span></td>
+              <td>${fmtMoney(u.balance)}</td><td style="color:var(--amber)">${fmtMoney(u.frozen_balance || 0)}</td><td><span class="pill ${(u.user_level||'V1')==='V1'?'gray':'indigo'}">${esc(u.user_level || 'V1')}</span></td>
               <td><span class="pill green">bcrypt 加密</span></td><td>${esc(u.referral_code)}</td>
               <td>${statusPill(u.kyc_status)}</td>
               <td><div class="row-actions"><button class="btn xs ghost" onclick="openUserModal(${u.id})">编辑</button><button class="btn xs danger" onclick="delUser(${u.id},'${esc(u.name)}')">删除</button></div></td>
@@ -224,11 +225,10 @@ async function openUserModal(id) {
         <div class="field"><label>余额(USD)</label><input name="balance" type="number" step="0.01" value="${u.balance ?? 0}"></div>
         <div class="field"><label>可用资金</label><input name="available" type="number" step="0.01" value="${u.available ?? u.balance ?? 0}"></div>
         <div class="field"><label>累计收益</label><input name="totalIncome" type="number" step="0.01" value="${u.total_income ?? 0}"></div>
-        <div class="field"><label>推广等级</label><select name="level"><option value="1" ${u.level==1?'selected':''}>一级</option><option value="2" ${u.level==2?'selected':''}>二级</option><option value="3" ${u.level==3?'selected':''}>三级</option></select></div>
         <div class="field"><label>状态</label><select name="status"><option value="active" ${u.status==='active'?'selected':''}>正常</option><option value="frozen" ${u.status==='frozen'?'selected':''}>冻结</option></select></div>
         <div class="field"><label>实名状态</label><select name="kycStatus"><option value="unverified" ${u.kyc_status==='unverified'?'selected':''}>未认证</option><option value="pending" ${u.kyc_status==='pending'?'selected':''}>待审核</option><option value="verified" ${u.kyc_status==='verified'?'selected':''}>已认证</option><option value="rejected" ${u.kyc_status==='rejected'?'selected':''}>已拒绝</option></select></div>
         <div class="field"><label>设置新密码</label><input name="password" type="password" value="" placeholder="留空则不修改；旧密码无法查看"></div>
-        <div class="field"><label>等级</label><select name="userLevel"><option value="L0" ${(u.user_level||'L0')==='L0'?'selected':''}>L0</option><option value="L1" ${u.user_level==='L1'?'selected':''}>L1</option><option value="L2" ${u.user_level==='L2'?'selected':''}>L2</option><option value="L3" ${u.user_level==='L3'?'selected':''}>L3</option></select></div>
+        <div class="field"><label>等级</label><select name="userLevel"><option value="V1" ${(u.user_level||'V1')==='V1'?'selected':''}>V1</option><option value="V2" ${u.user_level==='V2'?'selected':''}>V2</option><option value="V3" ${u.user_level==='V3'?'selected':''}>V3</option><option value="V4" ${u.user_level==='V4'?'selected':''}>V4</option><option value="V5" ${u.user_level==='V5'?'selected':''}>V5</option></select></div>
         <div class="field"><label>冻结钱包(USD)</label><input name="frozenBalance" type="number" step="0.01" value="${u.frozen_balance ?? 0}"></div>
         <div class="field full"><label>邀请码</label><input name="referralCode" value="${esc(u.referral_code)}"></div>
       </form></div>
@@ -255,7 +255,7 @@ async function saveUser(id) {
   const body = {
     name: f.get('name'), phone: f.get('phone'), email: f.get('email'),
     balance: Number(f.get('balance')), available: Number(f.get('available')), totalIncome: Number(f.get('totalIncome')),
-    level: Number(f.get('level')), status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode'), password: f.get('password'), userLevel: f.get('userLevel'), frozenBalance: Number(f.get('frozenBalance'))
+    status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode'), password: f.get('password'), userLevel: f.get('userLevel'), frozenBalance: Number(f.get('frozenBalance'))
   };
   try {
     if (id) await api('/api/users/' + id, { method: 'PUT', body: JSON.stringify(body) });
@@ -515,44 +515,59 @@ async function reviewKyc(id, action) {
   try { await api('/api/kyc/' + id + '/review', { method: 'PUT', body: JSON.stringify({ action }) }); toast('已处理'); closeModal(); loadView(); } catch (e) { toast(e.message, 'error'); }
 }
 
-/* ---------- Commissions ---------- */
+/* ---------- V1-V5 promotion ---------- */
 async function loadCommissions(root) {
   try {
-    const { list, rates } = await api('/api/commissions');
-    const total = list.reduce((s, c) => s + Number(c.amount || 0), 0);
-    root.innerHTML = `
-      <div class="stat-grid">
-        <div class="stat-card green"><div class="lab">💰 累计发放佣金</div><div class="val">$${fmtMoney(total)}</div><div class="sub">共 ${list.length} 笔</div></div>
-        <div class="stat-card"><div class="lab">🔗 一级返佣</div><div class="val">${(rates.find(r => r.level === 1) || {}).rate ?? 20}%</div></div>
-        <div class="stat-card"><div class="lab">🔗 二级返佣</div><div class="val">${(rates.find(r => r.level === 2) || {}).rate ?? 12}%</div></div>
-        <div class="stat-card"><div class="lab">🔗 三级返佣</div><div class="val">${(rates.find(r => r.level === 3) || {}).rate ?? 8}%</div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>返佣比例设置</h3></div>
-        <div class="panel-body">
-          <div class="toolbar">
-            <div class="field" style="margin:0;"><label>一级 %</label><input type="number" id="rate1" value="${(rates.find(r=>r.level===1)||{}).rate ?? 20}" style="width:90px;"></div>
-            <div class="field" style="margin:0;"><label>二级 %</label><input type="number" id="rate2" value="${(rates.find(r=>r.level===2)||{}).rate ?? 12}" style="width:90px;"></div>
-            <div class="field" style="margin:0;"><label>三级 %</label><input type="number" id="rate3" value="${(rates.find(r=>r.level===3)||{}).rate ?? 8}" style="width:90px;"></div>
-            <button class="btn sm" onclick="saveRates()">保存比例</button>
-          </div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><h3>佣金明细</h3></div>
-        <div class="panel-body">
-          <div class="table-wrap"><table>
-            <thead><tr><th>ID</th><th>用户</th><th>级别</th><th>金额(USD)</th><th>比例</th><th>订单</th><th>时间</th></tr></thead>
-            <tbody>${list.map(c => `<tr><td>${c.id}</td><td><b>${esc(c.user_name)}</b></td><td>${c.level}级</td><td>$${fmtMoney(c.amount)}</td><td>${(c.rate * 100).toFixed(0)}%</td><td>${esc(c.order_id)}</td><td>${fmtDate(c.created_at)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">暂无记录</td></tr>'}</tbody>
-          </table></div>
-        </div>
-      </div>`;
-  } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+    const levels = await api('/api/admin/agent-levels');
+    const rewards = await api('/api/admin/promotion-rewards');
+    const bonuses = await api('/api/admin/upgrade-bonuses');
+    const paidRewards = rewards.reduce(function (sum, item) { return sum + Number(item.amount || 0); }, 0);
+    const levelRows = levels.map(function (row) {
+      return '<tr>' +
+        '<td><b>V' + row.level + '</b></td>' +
+        '<td>' + esc(row.level_name) + '</td>' +
+        '<td><input id="agentDirect' + row.level + '" type="number" value="' + Number(row.direct_valid_required || 0) + '" style="width:70px"></td>' +
+        '<td><input id="agentSmall' + row.level + '" type="number" step="0.01" value="' + Number(row.small_area_required || 0) + '" style="width:100px"></td>' +
+        '<td><input id="agentV4' + row.level + '" type="number" value="' + Number(row.need_v4_count || 0) + '" style="width:60px"></td>' +
+        '<td><input id="agentDirectRate' + row.level + '" type="number" step="0.1" value="' + (Number(row.direct_rate || 0) * 100).toFixed(2) + '" style="width:70px">%</td>' +
+        '<td><input id="agentLotPrice' + row.level + '" type="number" step="0.01" value="' + Number(row.lot_price || 0) + '" style="width:70px"></td>' +
+        '<td><input id="agentSameRate' + row.level + '" type="number" step="0.1" value="' + (Number(row.same_level_rate || 0) * 100).toFixed(2) + '" style="width:70px">%</td>' +
+        '<td><input id="agentBonus' + row.level + '" type="number" step="0.01" value="' + Number(row.upgrade_bonus || 0) + '" style="width:80px"></td>' +
+        '<td><button class="btn xs" onclick="saveAgentLevel(' + row.level + ')">保存</button></td>' +
+      '</tr>';
+    }).join('');
+    const rewardNames = { direct_profit: '直推提成', lot_bonus: '小区手数奖', differential: '级差奖', same_level: '平级奖' };
+    const rewardRows = rewards.slice(0, 50).map(function (item) {
+      return '<tr><td>' + fmtDate(item.created_at) + '</td><td>' + esc(item.uid || '') + '<br><small>' + esc(item.name || '') + '</small></td><td>' + esc(rewardNames[item.reward_type] || item.reward_type) + '</td><td>' + Number(item.base_amount || 0).toFixed(2) + '</td><td>' + Number(item.standard_lots || 0).toFixed(4) + '</td><td>' + (Number(item.rate || 0) ? (Number(item.rate) * 100).toFixed(2) + '%' : '-') + '</td><td>' + Number(item.unit_price || 0) + '</td><td><b>' + Number(item.amount || 0).toFixed(4) + '</b></td><td>' + esc(item.remark || '') + '</td></tr>';
+    }).join('');
+    const bonusRows = bonuses.slice(0, 50).map(function (item) {
+      return '<tr><td>' + esc(item.uid || '') + '<br><small>' + esc(item.name || '') + '</small></td><td>' + esc(item.from_level || '') + ' → ' + esc(item.to_level) + '</td><td>' + Number(item.amount || 0).toFixed(2) + '</td><td>' + esc({paid:'已发放',pending:'待发放',cancelled:'已失效'}[item.status] || item.status) + '</td><td>' + fmtDate(item.qualify_at || item.qualified_at) + '</td><td>' + fmtDate(item.hold_until) + '</td></tr>';
+    }).join('');
+    root.innerHTML = '<div class="stat-grid">' +
+      '<div class="stat-card green"><div class="lab">推广奖励</div><div class="val">' + fmtMoney(paidRewards) + '</div><div class="sub">共 ' + rewards.length + ' 笔</div></div>' +
+      '<div class="stat-card"><div class="lab">V1-V5 等级</div><div class="val">' + levels.length + '</div></div>' +
+      '<div class="stat-card amber"><div class="lab">晋级奖励记录</div><div class="val">' + bonuses.length + '</div></div>' +
+    '</div>' +
+    '<div class="panel"><div class="panel-head"><h3>V1-V5 等级参数</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>等级</th><th>名称</th><th>直推有效人数</th><th>小区业绩</th><th>需培育V4</th><th>直推提成</th><th>手数单价</th><th>平级奖</th><th>晋级奖</th><th>操作</th></tr></thead><tbody>' + levelRows + '</tbody></table></div></div></div>' +
+    '<div class="panel"><div class="panel-head"><h3>每日推广奖励账单</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>日期</th><th>用户</th><th>类型</th><th>基数</th><th>手数</th><th>比例</th><th>单价</th><th>金额</th><th>说明</th></tr></thead><tbody>' + (rewardRows || '<tr><td colspan="9" class="empty">暂无奖励</td></tr>') + '</tbody></table></div></div></div>' +
+    '<div class="panel"><div class="panel-head"><h3>晋级奖励</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>用户</th><th>等级变化</th><th>金额</th><th>状态</th><th>达标时间</th><th>可发放时间</th></tr></thead><tbody>' + (bonusRows || '<tr><td colspan="6" class="empty">暂无晋级奖励</td></tr>') + '</tbody></table></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
 }
-async function saveRates() {
-  const rates = [1, 2, 3].map(l => ({ level: l, rate: Number($('#rate' + l).value) }));
-  try { await api('/api/commissions/rates', { method: 'PUT', body: JSON.stringify({ rates }) }); toast('返佣比例已更新'); loadView(); } catch (e) { toast(e.message, 'error'); }
-}/* ---------- Content ---------- */
+
+async function saveAgentLevel(level) {
+  const body = {
+    directValidRequired: Number($('#agentDirect' + level).value),
+    smallAreaRequired: Number($('#agentSmall' + level).value),
+    needV4Count: Number($('#agentV4' + level).value),
+    directRate: Number($('#agentDirectRate' + level).value) / 100,
+    lotPrice: Number($('#agentLotPrice' + level).value),
+    sameLevelRate: Number($('#agentSameRate' + level).value) / 100,
+    upgradeBonus: Number($('#agentBonus' + level).value),
+  };
+  try { await api('/api/admin/agent-levels/' + level, { method: 'PUT', body: JSON.stringify(body) }); toast('V' + level + ' 参数已更新'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ---------- Content ---------- */
 async function loadContent(root) {
   try {
     const items = await api('/api/content');
@@ -815,7 +830,7 @@ async function loadTeam(root) {
       <div class="stat-grid">
         <div class="stat-card"><div class="lab">👥 用户总数</div><div class="val">${users.length}</div></div>
         <div class="stat-card amber"><div class="lab">🏦 奖励模式</div><div class="val" style="font-size:18px;">直接发放</div><div class="sub">基金池已取消</div></div>
-        <div class="stat-card"><div class="lab">👑 L1+ 用户</div><div class="val">${users.filter(u => (u.userLevel||'L0') !== 'L0').length}</div></div>
+        <div class="stat-card"><div class="lab">👑 V2+ 用户</div><div class="val">${users.filter(u => (u.userLevel||'V1') !== 'V1').length}</div></div>
       </div>
       <div class="panel">
         <div class="panel-head"><h3>用户推荐关系与等级</h3></div>
@@ -824,7 +839,7 @@ async function loadTeam(root) {
             <thead><tr><th>用户</th><th>等级</th><th>直推实名</th><th>个人业绩</th><th>大区业绩</th><th>小区业绩</th><th>团队总业绩</th><th>冻结奖励</th><th>实名</th><th>直推下级</th></tr></thead>
             <tbody>${users.map(u => `<tr>
               <td><b>${esc(u.name)}</b><br><span style="color:#94a3b8;font-size:12px;">${esc(u.uid)}</span></td>
-              <td><span class="pill ${(u.userLevel||'L0')==='L0'?'gray':u.userLevel==='L1'?'blue':u.userLevel==='L2'?'indigo':'amber'}">${esc(u.userLevel || 'L0')}</span></td>
+              <td><span class="pill ${(u.userLevel||'V1')==='V1'?'gray':u.userLevel==='V2'?'blue':u.userLevel==='V3'?'indigo':'amber'}">${esc(u.userLevel || 'V1')}</span></td>
               <td>${u.directVerified}</td><td>${Number(u.personalVolume||0).toLocaleString()}</td><td>${Number(u.largeAreaVolume||0).toLocaleString()}</td><td>${Number(u.smallAreaVolume||0).toLocaleString()}</td><td>${Number(u.teamTotalVolume||u.teamVolume||0).toLocaleString()}</td><td>${Number(u.frozenBalance||0).toFixed(2)}</td>
               <td>${statusPill(u.kycStatus)}</td>
               <td style="font-size:12px;">${(u.direct||[]).map(d => esc(d.name)).join('、') || '—'}</td>
@@ -839,7 +854,8 @@ async function loadTeam(root) {
     const inv = await api('/api/admin/invite-rewards');
     $('#inviteTbody').innerHTML = inv.map(i => `<tr><td>${esc(i.referrer_uid)}</td><td>${esc(i.referred_name || i.referred_uid)}</td><td>${Number(i.amount).toFixed(2)}</td><td>${i.status==='frozen'?'<span class="pill amber">冻结</span>':'<span class="pill green">已解冻</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">暂无</td></tr>';
     const tr = await api('/api/admin/team-rewards');
-    $('#teamTbody').innerHTML = tr.map(t => `<tr><td>${esc(t.user_name || t.uid)}</td><td>${esc(t.level)}</td><td>${t.kind==='direct'?'直推':'团队'}</td><td>${Number(t.amount).toFixed(4)}</td><td style="font-size:12px;">${esc(t.source)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">暂无</td></tr>';
+    const rewardType = { direct_profit: '直推提成', lot_bonus: '小区手数奖', differential: '级差奖', same_level: '平级奖' };
+    $('#teamTbody').innerHTML = tr.map(t => `<tr><td>${esc(t.name || t.uid || t.member_id)}</td><td>${esc(t.user_level || '')}</td><td>${esc(rewardType[t.reward_type] || t.reward_type)}</td><td>${Number(t.amount).toFixed(4)}</td><td style="font-size:12px;">${esc(t.remark || t.biz_date || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">暂无</td></tr>';
   } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
 /* ---------- Settings ---------- */
@@ -899,6 +915,27 @@ function confirmDialog(message) {
 }
 /* ---------- modal helpers ---------- */
 function closeModal() { $$('.modal-mask').forEach(m => m.remove()); }
+
+async function loadNotices(root) {
+  try {
+    const campaigns = await api('/api/admin/notification-campaigns');
+    const rows = campaigns.map(function (item) {
+      return '<tr><td>' + item.id + '</td><td><b>' + esc(item.title) + '</b></td><td style="max-width:360px;">' + esc(item.body) + '</td><td>' + esc(item.type) + '</td><td>' + (item.is_popup ? '<span class="pill green">弹窗</span>' : '<span class="pill gray">仅通知</span>') + '</td><td>' + esc(item.created_by || '') + '</td><td>' + fmtDate(item.created_at) + '</td></tr>';
+    }).join('');
+    root.innerHTML = '<div class="panel" style="max-width:760px;"><div class="panel-head"><h3>发布通知</h3><button class="btn sm" onclick="publishNotice()">立即发布</button></div><div class="panel-body"><div class="field"><label>通知标题</label><input id="noticeTitle" placeholder="请输入通知标题"></div><div class="field"><label>通知内容</label><textarea id="noticeBody" rows="5" placeholder="请输入通知内容"></textarea></div><div class="field"><label>通知类型</label><select id="noticeType"><option value="system">系统通知</option><option value="activity">活动通知</option><option value="risk">风险提示</option><option value="maintenance">维护通知</option></select></div><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;"><input id="noticePopup" type="checkbox" checked> 用户当日首次登录时弹窗提醒</label></div></div>' +
+      '<div class="panel"><div class="panel-head"><h3>发布记录</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>ID</th><th>标题</th><th>内容</th><th>类型</th><th>方式</th><th>发布人</th><th>发布时间</th></tr></thead><tbody>' + (rows || '<tr><td colspan="7" class="empty">暂无通知</td></tr>') + '</tbody></table></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+async function publishNotice() {
+  const title = $('#noticeTitle').value.trim();
+  const body = $('#noticeBody').value.trim();
+  if (!title || !body) return toast('请填写通知标题和内容', 'error');
+  try {
+    const result = await api('/api/admin/notifications/publish', { method: 'POST', body: JSON.stringify({ title, body, type: $('#noticeType').value, isPopup: $('#noticePopup').checked }) });
+    toast('通知已发布，接收用户 ' + result.recipients + ' 人');
+    loadView();
+  } catch (e) { toast(e.message, 'error'); }
+}
 
 async function loadSupport(root) {
   try {
