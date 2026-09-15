@@ -1754,7 +1754,10 @@ function saveQuotePrice(row, price, change, source) {
 
 async function refreshMarketQuotes() {
   const result = { ok: false, top10: 0, crypto: 0, market: 0, failed: 0, updated: 0 };
-  try { result.top10 = await refreshCryptoTop10(); } catch (e) { result.failed++; }
+  const existingCryptoCount = db.prepare("SELECT COUNT(*) c FROM quotes WHERE category='crypto'").get().c;
+  if (existingCryptoCount < 10) {
+    try { result.top10 = await refreshCryptoTop10(); } catch (e) { result.failed++; }
+  }
   const cryptoRows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
   try {
     const prices = await fetchCryptoPrices(cryptoRows);
