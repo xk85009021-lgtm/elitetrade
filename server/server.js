@@ -188,6 +188,7 @@ function toUser(u) {
     isVerified: !!u.is_verified,
     totalAssets: u.total_assets,
     totalIncome: u.total_income,
+    pointsBalance: Number(u.points_balance || 0),
     referrerId: u.referrer_id,
     twofaEnabled: !!u.twofa_enabled,
     emergencyFrozen: !!u.emergency_frozen,
@@ -259,8 +260,8 @@ app.post('/api/users', auth, (req, res) => {
   const rawPassword = String(b.password || '');
   if (rawPassword.length < 8) return res.status(400).json({ error: '新用户密码至少8位' });
   const passwordHash = bcrypt.hashSync(rawPassword, 10);
-  db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,total_assets,available,total_income,frozen_balance,user_level,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(uid, b.name || '', b.phone || '', b.email || '', passwordHash, Number(b.balance)||0, Number(b.balance)||0, (Number(b.available) ?? Number(b.balance)) || 0, Number(b.totalIncome)||0, Number(b.frozenBalance)||0, b.userLevel || 'V1', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, levelNumber(b.userLevel || 'V1'), b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
+  db.prepare(`INSERT INTO users (uid,name,phone,email,password,balance,total_assets,available,total_income,frozen_balance,points_balance,user_level,referral_code,referrer_id,level,status,kyc_status,is_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(uid, b.name || '', b.phone || '', b.email || '', passwordHash, Number(b.balance)||0, Number(b.balance)||0, (Number.isFinite(Number(b.available)) ? Number(b.available) : Number(b.balance)||0), Number(b.totalIncome)||0, Number(b.frozenBalance)||0, Number(b.pointsBalance)||0, b.userLevel || 'V1', b.referralCode || ('ET-' + uid.slice(-6)), b.referrerId || null, levelNumber(b.userLevel || 'V1'), b.status || 'active', b.kycStatus || 'unverified', b.isVerified ? 1 : 0);
   addAudit('admin', req.admin.username, 'CREATE_USER', 'user', uid, { uid, name: b.name || '' });
   res.json({ ok: true, uid });
 });
@@ -273,8 +274,8 @@ app.put('/api/users/:id', auth, (req, res) => {
   const passwordHash = b.password !== undefined && String(b.password) !== ''
     ? bcrypt.hashSync(String(b.password), 10)
     : cur.password;
-  db.prepare(`UPDATE users SET name=?, phone=?, email=?, password=?, balance=?, total_assets=?, available=?, total_income=?, frozen_balance=?, user_level=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
-    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, passwordHash, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? levelNumber(b.userLevel) : cur.level, id);
+  db.prepare(`UPDATE users SET name=?, phone=?, email=?, password=?, balance=?, total_assets=?, available=?, total_income=?, frozen_balance=?, points_balance=?, user_level=?, status=?, kyc_status=?, is_verified=?, level=? WHERE id=?`)
+    .run(b.name ?? cur.name, b.phone ?? cur.phone, b.email ?? cur.email, passwordHash, b.balance ?? cur.balance, b.totalAssets ?? cur.total_assets, b.available ?? cur.available, b.totalIncome ?? cur.total_income, b.frozenBalance ?? cur.frozen_balance, b.pointsBalance ?? cur.points_balance, b.userLevel ?? cur.user_level, b.status ?? cur.status, b.kycStatus ?? cur.kyc_status, b.isVerified !== undefined ? (b.isVerified ? 1 : 0) : cur.is_verified, b.userLevel ? levelNumber(b.userLevel) : cur.level, id);
   addAudit('admin', req.admin.username, 'UPDATE_USER', 'user', id, { passwordChanged: b.password !== undefined && String(b.password) !== '' });
   res.json({ ok: true });
 });
@@ -481,6 +482,70 @@ app.post('/api/admin/notifications/publish', auth, (req, res) => {
   });
   const out = tx();
   res.json({ ok: true, campaignId: out.id, recipients: out.count });
+});
+
+// ---------- 积分商城 ----------
+app.get('/api/admin/point-products', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM point_products ORDER BY sort_order ASC, id DESC').all());
+});
+app.post('/api/admin/point-products', auth, (req, res) => {
+  const b = req.body || {};
+  if (!String(b.name || '').trim()) return res.status(400).json({ error: '商品名称不能为空' });
+  const info = db.prepare('INSERT INTO point_products (name,category,price_points,image,description,stock,status,sort_order) VALUES (?,?,?,?,?,?,?,?)')
+    .run(String(b.name).trim(), String(b.category || '高端商品'), Math.max(0, Number(b.pricePoints) || 0), String(b.image || ''), String(b.description || ''), Math.max(0, Number(b.stock) || 0), b.status || 'active', Number(b.sortOrder) || 0);
+  addAudit('admin', req.admin.username, 'CREATE_POINT_PRODUCT', 'point_product', info.lastInsertRowid, { name: b.name });
+  res.json({ ok: true, id: info.lastInsertRowid });
+});
+app.put('/api/admin/point-products/:id', auth, (req, res) => {
+  const cur = db.prepare('SELECT * FROM point_products WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '商品不存在' });
+  const b = req.body || {};
+  db.prepare("UPDATE point_products SET name=?,category=?,price_points=?,image=?,description=?,stock=?,status=?,sort_order=?,updated_at=datetime('now','localtime') WHERE id=?")
+    .run(b.name ?? cur.name, b.category ?? cur.category, b.pricePoints ?? cur.price_points, b.image ?? cur.image, b.description ?? cur.description, b.stock ?? cur.stock, b.status ?? cur.status, b.sortOrder ?? cur.sort_order, cur.id);
+  addAudit('admin', req.admin.username, 'UPDATE_POINT_PRODUCT', 'point_product', cur.id, { name: b.name ?? cur.name });
+  res.json({ ok: true });
+});
+app.delete('/api/admin/point-products/:id', auth, (req, res) => {
+  db.prepare('DELETE FROM point_products WHERE id=?').run(req.params.id);
+  addAudit('admin', req.admin.username, 'DELETE_POINT_PRODUCT', 'point_product', req.params.id, {});
+  res.json({ ok: true });
+});
+app.get('/api/admin/point-redemptions', auth, (req, res) => {
+  const status = String(req.query.status || '').trim();
+  let sql = 'SELECT r.*, u.uid, u.name FROM point_redemptions r LEFT JOIN users u ON u.id=r.user_id WHERE 1=1';
+  const params = [];
+  if (status) { sql += ' AND r.status=?'; params.push(status); }
+  sql += ' ORDER BY r.id DESC LIMIT 500';
+  res.json(db.prepare(sql).all(...params));
+});
+app.put('/api/admin/point-redemptions/:id/review', auth, (req, res) => {
+  const action = String((req.body || {}).action || '');
+  const remark = String((req.body || {}).remark || '');
+  if (!['approve','reject','ship','complete'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const tx = db.transaction(() => {
+    const row = db.prepare('SELECT * FROM point_redemptions WHERE id=?').get(req.params.id);
+    if (!row) return { code:404, error:'兑换记录不存在' };
+    const allowed = action === 'approve' ? ['pending'] : action === 'reject' ? ['pending','approved'] : action === 'ship' ? ['approved'] : ['shipped'];
+    if (!allowed.includes(row.status)) return { code:409, error:'当前状态不能执行该操作' };
+    const nextStatus = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action === 'ship' ? 'shipped' : 'completed';
+    const info = db.prepare("UPDATE point_redemptions SET status=?,remark=?,reviewed_by=?,reviewed_at=datetime('now','localtime'),updated_at=datetime('now','localtime') WHERE id=? AND status=?")
+      .run(nextStatus, remark, req.admin.username, row.id, row.status);
+    if (!info.changes) return { code:409, error:'记录已处理' };
+    if (action === 'reject') {
+      db.prepare('UPDATE users SET points_balance=points_balance+? WHERE id=?').run(row.points_spent, row.user_id);
+      db.prepare('UPDATE point_products SET stock=stock+? WHERE id=?').run(row.quantity, row.product_id);
+      const balance = db.prepare('SELECT points_balance FROM users WHERE id=?').get(row.user_id).points_balance;
+      db.prepare('INSERT INTO points_transactions (user_id,amount,balance_after,type,reference_type,reference_id,description) VALUES (?,?,?,?,?,?,?)').run(row.user_id, row.points_spent, balance, 'redemption_refund', 'redemption', row.id, '兑换申请被拒绝，积分退回');
+      addNotification(row.user_id, '积分兑换未通过', remark || '兑换申请未通过，积分已退回。', 'points');
+    } else {
+      addNotification(row.user_id, '积分兑换状态更新', row.product_name + '：' + nextStatus, 'points');
+    }
+    addAudit('admin', req.admin.username, 'REVIEW_POINT_REDEMPTION_' + action.toUpperCase(), 'point_redemption', row.id, { nextStatus });
+    return { ok:true, status:nextStatus };
+  });
+  const out = tx();
+  if (out.error) return res.status(out.code).json({ error: out.error });
+  res.json(out);
 });
 
 // ---------- content (前端页面内容) ----------
@@ -760,7 +825,9 @@ app.put('/api/public/follows/:id/continue', userAuth, (req, res) => {
 });
 
 app.get('/api/public/quotes', (req, res) => {
-  res.json(db.prepare('SELECT symbol,name,price,ask_price as askPrice,change_percent as change,category,updated_at FROM quotes ORDER BY category,symbol').all());
+  const rows = db.prepare('SELECT symbol,name,price,ask_price as askPrice,change_percent as change,category,api_provider,api_id,updated_at FROM quotes ORDER BY category,symbol').all();
+  const history = db.prepare('SELECT price FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 30');
+  res.json(rows.map((row) => ({ ...row, sparkline: history.all(row.symbol).map((item) => Number(item.price)).reverse() })));
 });
 
 app.get('/api/public/referral', userAuth, (req, res) => {
@@ -820,7 +887,7 @@ app.get('/api/public/overview', userAuth, (req, res) => {
   const myInvest = investments.reduce((sum, i) => sum + Number(i.amount || 0), 0);
   const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards WHERE member_id=?').get(user.id).s;
   const todayProfit = db.prepare('SELECT COALESCE(SUM(customer_share),0) s FROM yield_records WHERE uid=? AND settle_date=?').get(user.uid, businessDate()).s;
-  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, userLevel: user.user_level || 'V1', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
+  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, pointsBalance: Number(user.points_balance || 0), userLevel: user.user_level || 'V1', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
 });
 
 app.post('/api/public/invest', userAuth, (req, res) => {
@@ -987,6 +1054,47 @@ app.get('/api/public/rewards', userAuth, (req, res) => {
     bizDate: item.biz_date,
     createdAt: item.created_at
   })));
+});
+app.get('/api/public/points', userAuth, (req, res) => {
+  const user = db.prepare('SELECT points_balance FROM users WHERE id=?').get(req.user.id);
+  const transactions = db.prepare('SELECT * FROM points_transactions WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user.id);
+  const redemptions = db.prepare('SELECT * FROM point_redemptions WHERE user_id=? ORDER BY id DESC LIMIT 50').all(req.user.id);
+  res.json({
+    balance: Number(user?.points_balance || 0),
+    rule: '跟单金额每满500 USDT，每日获得10积分；多笔跟单可叠加。',
+    transactions: transactions.map((item) => ({ id:item.id, amount:item.amount, balanceAfter:item.balance_after, type:item.type, description:item.description, createdAt:item.created_at })),
+    redemptions: redemptions.map((item) => ({ id:item.id, productId:item.product_id, productName:item.product_name, quantity:item.quantity, pointsSpent:item.points_spent, status:item.status, remark:item.remark, createdAt:item.created_at }))
+  });
+});
+app.get('/api/public/points/products', (req, res) => {
+  res.json(db.prepare("SELECT * FROM point_products WHERE status='active' ORDER BY sort_order ASC, id DESC").all());
+});
+app.post('/api/public/points/redeem', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const productId = Number((req.body || {}).productId || 0);
+  const quantity = Math.max(1, Math.min(10, Number((req.body || {}).quantity || 1)));
+  const address = String((req.body || {}).address || '').trim();
+  const contact = String((req.body || {}).contact || '').trim();
+  if (!productId) return res.status(400).json({ error: '请选择兑换商品' });
+  if (!address || !contact) return res.status(400).json({ error: '请填写收货地址和联系方式' });
+  const tx = db.transaction(() => {
+    const product = db.prepare("SELECT * FROM point_products WHERE id=? AND status='active'").get(productId);
+    if (!product) return { code:404, error:'商品不存在或已下架' };
+    if (Number(product.stock) < quantity) return { code:409, error:'商品库存不足' };
+    const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+    const cost = Number(product.price_points) * quantity;
+    if (Number(user.points_balance || 0) < cost) return { code:400, error:'积分余额不足' };
+    const newBalance = Number(user.points_balance || 0) - cost;
+    db.prepare('UPDATE users SET points_balance=? WHERE id=?').run(newBalance, user.id);
+    db.prepare("UPDATE point_products SET stock=stock-?, updated_at=datetime('now','localtime') WHERE id=?").run(quantity, product.id);
+    const info = db.prepare('INSERT INTO point_redemptions (user_id,product_id,product_name,quantity,points_spent,status,address,contact) VALUES (?,?,?,?,?,?,?,?)').run(user.id, product.id, product.name, quantity, cost, 'pending', address, contact);
+    db.prepare('INSERT INTO points_transactions (user_id,amount,balance_after,type,reference_type,reference_id,description) VALUES (?,?,?,?,?,?,?)').run(user.id, -cost, newBalance, 'redemption', 'redemption', Number(info.lastInsertRowid), '兑换 ' + product.name + ' × ' + quantity);
+    addNotification(user.id, '积分兑换申请已提交', product.name + ' × ' + quantity + ' 正在等待后台确认。', 'points');
+    return { ok:true, redemptionId:Number(info.lastInsertRowid), balance:newBalance, cost };
+  });
+  const out = tx();
+  if (out.error) return res.status(out.code).json({ error: out.error });
+  res.json(out);
 });
 app.get('/api/public/groups', userAuth, (req, res) => {
   res.json(db.prepare('SELECT g.* FROM groups g JOIN group_members m ON m.group_id=g.id WHERE m.uid=? ORDER BY g.id DESC').all(req.user.uid));
@@ -1288,7 +1396,10 @@ function settleDaily(req) {
   const bizDate = isManualSettlement ? businessDate() : businessDate(new Date(Date.now() - 12 * 60 * 60 * 1000));
   const force = !!(req && req.query && req.query.force);
   const done = db.prepare('SELECT COUNT(*) c FROM yield_records WHERE settle_date=?').get(bizDate).c;
-  if (done > 0 && !force) return { skipped: true, count: 0, reason: '今天已结算', bizDate };
+  if (done > 0 && !force) {
+    const pointsIssued = settleFollowPoints(bizDate);
+    return { skipped: true, count: 0, pointsIssued, reason: '今天已结算', bizDate };
+  }
   const follows = db.prepare("SELECT * FROM follows WHERE status='active'").all();
   let count = 0;
   const profitByUid = {};
@@ -1335,8 +1446,35 @@ function settleDaily(req) {
     }
     count++;
   }
+  const pointsIssued = settleFollowPoints(bizDate);
   settleAgentPromotion(profitByUid, bizDate);
-  return { skipped: false, count, bizDate, timezone: APP_TZ };
+  return { skipped: false, count, pointsIssued, bizDate, timezone: APP_TZ };
+}
+
+function settleFollowPoints(bizDate) {
+  const follows = db.prepare("SELECT f.*, u.name FROM follows f JOIN users u ON u.id=f.user_id WHERE f.status='active' AND f.allocated>=500").all();
+  const byUser = new Map();
+  const tx = db.transaction(() => {
+    const insertAccrual = db.prepare('INSERT OR IGNORE INTO daily_point_accruals (user_id,follow_id,biz_date,principal,points) VALUES (?,?,?,?,?)');
+    const updatePoints = db.prepare('UPDATE users SET points_balance=points_balance+? WHERE id=?');
+    const getBalance = db.prepare('SELECT points_balance FROM users WHERE id=?');
+    const insertLedger = db.prepare('INSERT INTO points_transactions (user_id,amount,balance_after,type,reference_type,reference_id,description) VALUES (?,?,?,?,?,?,?)');
+    for (const follow of follows) {
+      const points = Math.floor(Number(follow.allocated || 0) / 500) * 10;
+      if (points <= 0) continue;
+      const info = insertAccrual.run(follow.user_id, follow.id, bizDate, Number(follow.allocated || 0), points);
+      if (!info.changes) continue;
+      updatePoints.run(points, follow.user_id);
+      const balance = Number(getBalance.get(follow.user_id).points_balance || 0);
+      insertLedger.run(follow.user_id, points, balance, 'follow_accrual', 'follow', follow.id, bizDate + ' 跟单 ' + Number(follow.allocated || 0).toFixed(2) + ' USDT');
+      byUser.set(follow.user_id, (byUser.get(follow.user_id) || 0) + points);
+    }
+    for (const [userId, points] of byUser) {
+      addNotification(userId, '跟单积分到账', '今日跟单积分 +' + points + ' 积分。', 'points');
+    }
+    return Array.from(byUser.values()).reduce((sum, points) => sum + points, 0);
+  });
+  return tx();
 }
 
 function settleAgentPromotion(profitByUid, bizDate) {
@@ -1516,39 +1654,28 @@ app.get('/api/admin/quotes', auth, (req, res) => {
 app.post('/api/admin/quotes', auth, (req, res) => {
   const b = req.body || {};
   if (!b.symbol) return res.status(400).json({ error: '请输入品种代码' });
-  db.prepare('INSERT OR REPLACE INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id) VALUES (?,?,?,?,?,?,?)')
-    .run(String(b.symbol).toUpperCase(), b.name || b.symbol, Number(b.price) || 0, Number(b.askPrice) || Number(b.price) || 0, Number(b.change) || 0, b.category || 'forex', b.apiId || null);
+  const category = b.category || 'forex';
+  db.prepare('INSERT OR REPLACE INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id,api_provider) VALUES (?,?,?,?,?,?,?,?)')
+    .run(String(b.symbol).toUpperCase(), b.name || b.symbol, Number(b.price) || 0, Number(b.askPrice) || Number(b.price) || 0, Number(b.change) || 0, category, b.apiId || null, b.apiProvider || (category === 'crypto' ? 'coingecko' : 'yahoo'));
   res.json({ ok: true });
 });
 app.put('/api/admin/quotes/:symbol', auth, (req, res) => {
   const b = req.body || {};
   const cur = db.prepare('SELECT * FROM quotes WHERE symbol = ?').get(req.params.symbol);
   if (!cur) return res.status(404).json({ error: '品种不存在' });
-  db.prepare("UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=?, updated_at=datetime('now','localtime') WHERE symbol=?")
-    .run(b.name ?? cur.name, b.price ?? cur.price, b.askPrice ?? cur.ask_price, b.change ?? cur.change_percent, b.category ?? cur.category, b.apiId ?? cur.api_id, req.params.symbol);
+  db.prepare("UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=?, api_provider=?, updated_at=datetime('now','localtime') WHERE symbol=?")
+    .run(b.name ?? cur.name, b.price ?? cur.price, b.askPrice ?? cur.ask_price, b.change ?? cur.change_percent, b.category ?? cur.category, b.apiId ?? cur.api_id, b.apiProvider ?? cur.api_provider ?? ((b.category ?? cur.category) === 'crypto' ? 'coingecko' : 'yahoo'), req.params.symbol);
   res.json({ ok: true });
 });
 app.delete('/api/admin/quotes/:symbol', auth, (req, res) => {
   db.prepare('DELETE FROM quotes WHERE symbol = ?').run(req.params.symbol);
   res.json({ ok: true });
 });
-// 实时刷新加密币价格（CoinGecko 免费 API，无需 key）
+// 实时刷新贵金属、指数和加密币价格（免费公开行情源）
 app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
-    const prices = await fetchCryptoPrices(rows);
-    let updated = 0;
-    for (const r of rows) {
-      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')] || prices[String(r.symbol).split('/')[0]];
-      if (p) { db.prepare("UPDATE quotes SET price=?, ask_price=?, updated_at=datetime('now','localtime') WHERE symbol=?").run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); updated++; }
-    }
-    if (updated === 0) {
-      const msg = rows.length === 0
-        ? '没有可刷新的加密品种（请在「行情品种」中新增或检查分类为 crypto）'
-        : '未能从行情源获取价格：请确认服务器可访问外网（Coinbase/Binance/CoinGecko），或该品种尚未配置可用代码';
-      return res.json({ ok: false, updated: 0, message: msg, candidates: rows.length });
-    }
-    res.json({ ok: true, updated });
+    const result = await refreshMarketQuotes();
+    res.json(result);
   } catch (e) { res.status(500).json({ error: '刷新失败: ' + e.message }); }
 });
 // 走势图历史
@@ -1557,6 +1684,112 @@ app.get('/api/public/quotes/history', (req, res) => {
   const rows = db.prepare('SELECT price, ts FROM price_history WHERE symbol = ? ORDER BY id DESC LIMIT 60').all(symbol);
   res.json(rows.reverse());
 });
+
+async function refreshCryptoTop10() {
+  const resp = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false', { signal: AbortSignal.timeout(12000) });
+  if (!resp.ok) throw new Error('CoinGecko HTTP ' + resp.status);
+  const list = await resp.json();
+  if (!Array.isArray(list) || !list.length) return 0;
+  const stable = new Set(['usdt','usdc','dai','fdusd','tusd']);
+  const insert = db.prepare("INSERT INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id,api_provider) VALUES (?,?,?,?,?,'crypto',?,'coingecko') ON CONFLICT(symbol) DO UPDATE SET name=excluded.name,api_id=excluded.api_id,api_provider='coingecko'");
+  let count = 0;
+  const tx = db.transaction(() => {
+    for (const coin of list) {
+      const sym = String(coin.symbol || '').toLowerCase();
+      if (!sym || coin.current_price == null) continue;
+      const symbol = stable.has(sym) ? sym.toUpperCase() + '/USD' : sym.toUpperCase() + '/USDT';
+      const price = Number(coin.current_price) || 0;
+      const change = Number(coin.price_change_percentage_24h) || 0;
+      insert.run(symbol, coin.name || symbol, price, price, change, coin.id || sym);
+      count++;
+    }
+  });
+  tx();
+  return count;
+}
+
+async function fetchYahooQuote(row) {
+  const id = row.api_id || row.symbol;
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(id) + '?interval=1m&range=1d';
+  const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 YingtoCopy/1.0' }, signal: AbortSignal.timeout(12000) });
+  if (!resp.ok) throw new Error('Yahoo HTTP ' + resp.status + ' ' + row.symbol);
+  const json = await resp.json();
+  const result = json?.chart?.result?.[0];
+  const price = Number(result?.meta?.regularMarketPrice);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Yahoo no price ' + row.symbol);
+  const previous = Number(result?.meta?.chartPreviousClose || result?.meta?.previousClose || 0);
+  const change = previous > 0 ? ((price - previous) / previous) * 100 : Number(result?.meta?.regularMarketChangePercent || 0);
+  return { price, change: Number(change.toFixed(4)) };
+}
+
+async function fetchTradingViewPrices(rows) {
+  const tvMap = { XAUUSD:'OANDA:XAUUSD', XAGUSD:'OANDA:XAGUSD', XPTUSD:'OANDA:XPTUSD', XPDUSD:'OANDA:XPDUSD', XCUUSD:'OANDA:XCUUSD', HSI:'TVC:HSI', NASDAQ:'NASDAQ:IXIC' };
+  const pairs = rows.map((row) => ({ row, ticker: tvMap[row.symbol] })).filter((item) => item.ticker);
+  if (!pairs.length) return {};
+  const resp = await fetch('https://scanner.tradingview.com/global/scan', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'User-Agent':'Mozilla/5.0', 'Origin':'https://www.tradingview.com', 'Referer':'https://www.tradingview.com/' },
+    body: JSON.stringify({ symbols: { tickers: pairs.map((item) => item.ticker), query: { types: [] } }, columns: ['close','change'] }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!resp.ok) throw new Error('TradingView HTTP ' + resp.status);
+  const json = await resp.json();
+  const byTicker = new Map(pairs.map((item) => [item.ticker, item.row]));
+  const out = {};
+  for (const item of (json.data || [])) {
+    const ticker = item.s && item.s.s;
+    const row = byTicker.get(ticker);
+    if (!row || !Array.isArray(item.d)) continue;
+    const price = Number(item.d[0]);
+    if (price > 0) out[row.symbol] = { price, change: Number(item.d[1] || 0) };
+  }
+  return out;
+}
+
+function saveQuotePrice(row, price, change, source) {
+  db.prepare("UPDATE quotes SET price=?,ask_price=?,change_percent=?,api_provider=?,updated_at=datetime('now','localtime') WHERE symbol=?")
+    .run(price, price, Number(change || 0), source, row.symbol);
+  db.prepare('INSERT INTO price_history (symbol,price) VALUES (?,?)').run(row.symbol, price);
+}
+
+async function refreshMarketQuotes() {
+  const result = { ok: false, top10: 0, crypto: 0, market: 0, failed: 0, updated: 0 };
+  try { result.top10 = await refreshCryptoTop10(); } catch (e) { result.failed++; }
+  const cryptoRows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
+  try {
+    const prices = await fetchCryptoPrices(cryptoRows);
+    const cryptoChangeRows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
+    for (const row of cryptoChangeRows) {
+      const price = prices[row.symbol] || prices[String(row.symbol).replace('/','')] || prices[String(row.symbol).split('/')[0]];
+      if (price) {
+        const previous = Number(row.price || 0);
+        const change = previous > 0 ? ((Number(price) - previous) / previous) * 100 : 0;
+        saveQuotePrice(row, Number(price), change, 'crypto');
+        result.crypto++;
+      }
+    }
+  } catch (e) { result.failed++; }
+
+  const marketRows = db.prepare("SELECT * FROM quotes WHERE api_provider='yahoo' OR category IN ('precious','index')").all();
+  let tvPrices = {};
+  try { tvPrices = await fetchTradingViewPrices(marketRows); } catch (e) { tvPrices = {}; }
+  const marketResults = await Promise.allSettled(marketRows.map(async (row) => ({ row, quote: await fetchYahooQuote(row) })));
+  for (let i = 0; i < marketResults.length; i++) {
+    const item = marketResults[i];
+    const row = marketRows[i];
+    if (item.status === 'fulfilled') {
+      saveQuotePrice(row, item.value.quote.price, item.value.quote.change, 'yahoo');
+      result.market++;
+    } else if (tvPrices[row.symbol]) {
+      saveQuotePrice(row, tvPrices[row.symbol].price, tvPrices[row.symbol].change, 'tradingview');
+      result.market++;
+    } else result.failed++;
+  }
+  result.updated = result.crypto + result.market;
+  result.ok = result.updated > 0;
+  result.message = result.ok ? '行情刷新完成' : '行情源暂时不可用';
+  return result;
+}
 
 async function fetchCryptoPrices(rows) {
   const out = {};
@@ -1592,17 +1825,14 @@ async function fetchCryptoPrices(rows) {
   return out;
 }
 
-// 定时：加密币 5 分钟刷新一次
+// 定时刷新：加密币 60 秒，贵金属和指数 120 秒
+let marketRefreshRunning = false;
 setInterval(async () => {
-  try {
-    const rows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
-    const prices = await fetchCryptoPrices(rows);
-    for (const r of rows) {
-      const p = prices[r.symbol] || prices[String(r.symbol).replace('/','')] || prices[String(r.symbol).split('/')[0]];
-      if (p) { db.prepare('UPDATE quotes SET price=?, ask_price=? WHERE symbol=?').run(p, p, r.symbol); db.prepare('INSERT INTO price_history (symbol, price) VALUES (?,?)').run(r.symbol, p); }
-    }
-  } catch (e) {}
-}, 300000);
+  if (marketRefreshRunning) return;
+  marketRefreshRunning = true;
+  try { await refreshMarketQuotes(); } catch (e) {} finally { marketRefreshRunning = false; }
+}, 60000);
+setTimeout(() => { refreshMarketQuotes().catch(() => {}); }, 15000);
 
 // ================= 团队总览（后台）=================
 app.get('/api/admin/team', auth, (req, res) => {

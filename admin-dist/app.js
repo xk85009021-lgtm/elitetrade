@@ -75,6 +75,7 @@ const NAV = [
   ['commissions', '🔗', '推广收益'],
   ['quotes', '💹', '行情品种'],
   ['wallet', '🏦', '钱包配置'],
+  ['points', '🎁', '积分商城'],
   ['team', '👑', '推荐团队'],
   ['notices', '📢', '通知发布'],
   ['support', '💬', '客服工单'],
@@ -131,7 +132,7 @@ function loadView() {
   const root = $('#viewRoot');
   if (!root) return;
   root.innerHTML = '<div class="empty">加载中...</div>';
-  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, team: loadTeam, notices: loadNotices, support: loadSupport, leads: loadLeads, content: loadContent, audit: loadAudit, settings: loadSettings }[state.view];
+  const fn = { dashboard: loadDashboard, users: loadUsers, rooms: loadRooms, projects: loadProjects, transactions: loadTransactions, settle: loadSettle, kyc: loadKyc, commissions: loadCommissions, quotes: loadQuotes, wallet: loadWallet, points: loadPoints, team: loadTeam, notices: loadNotices, support: loadSupport, leads: loadLeads, content: loadContent, audit: loadAudit, settings: loadSettings }[state.view];
   if (fn) fn(root);
 }/* ---------- Dashboard ---------- */
 async function loadDashboard(root) {
@@ -230,6 +231,7 @@ async function openUserModal(id) {
         <div class="field"><label>设置新密码</label><input name="password" type="password" value="" placeholder="留空则不修改；旧密码无法查看"></div>
         <div class="field"><label>等级</label><select name="userLevel"><option value="V1" ${(u.user_level||'V1')==='V1'?'selected':''}>V1</option><option value="V2" ${u.user_level==='V2'?'selected':''}>V2</option><option value="V3" ${u.user_level==='V3'?'selected':''}>V3</option><option value="V4" ${u.user_level==='V4'?'selected':''}>V4</option><option value="V5" ${u.user_level==='V5'?'selected':''}>V5</option></select></div>
         <div class="field"><label>冻结钱包(USD)</label><input name="frozenBalance" type="number" step="0.01" value="${u.frozen_balance ?? 0}"></div>
+        <div class="field"><label>积分余额</label><input name="pointsBalance" type="number" step="1" value="${u.points_balance ?? 0}"></div>
         <div class="field full"><label>邀请码</label><input name="referralCode" value="${esc(u.referral_code)}"></div>
       </form></div>
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveUser(${id || 0})">保存</button></div>
@@ -255,7 +257,7 @@ async function saveUser(id) {
   const body = {
     name: f.get('name'), phone: f.get('phone'), email: f.get('email'),
     balance: Number(f.get('balance')), available: Number(f.get('available')), totalIncome: Number(f.get('totalIncome')),
-    status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode'), password: f.get('password'), userLevel: f.get('userLevel'), frozenBalance: Number(f.get('frozenBalance'))
+    status: f.get('status'), kycStatus: f.get('kycStatus'), referralCode: f.get('referralCode'), password: f.get('password'), userLevel: f.get('userLevel'), frozenBalance: Number(f.get('frozenBalance')), pointsBalance: Number(f.get('pointsBalance'))
   };
   try {
     if (id) await api('/api/users/' + id, { method: 'PUT', body: JSON.stringify(body) });
@@ -708,8 +710,9 @@ async function openQuoteModal(symbol) {
         <div class="field"><label>代码（如 BTC/USDT、XAUUSD）</label><input name="symbol" value="${esc(q.symbol)}" ${symbol?'disabled':''}></div>
         <div class="field"><label>名称</label><input name="name" value="${esc(q.name)}"></div>
         <div class="field"><label>最新价</label><input name="price" type="number" step="0.0001" value="${q.price ?? 0}"></div>
-        <div class="field"><label>分类</label><select name="category"><option value="precious" ${q.category==='precious'?'selected':''}>贵金属</option><option value="crypto" ${q.category==='crypto'?'selected':''}>加密货币</option><option value="oil" ${q.category==='oil'?'selected':''}>原油</option><option value="forex" ${q.category==='forex'?'selected':''}>外汇</option></select></div>
-        <div class="field full"><label>API源ID（仅加密币，CoinGecko 代码）</label><input name="apiId" value="${esc(q.api_id || '')}" placeholder="如 bitcoin / ethereum / solana"></div>
+        <div class="field"><label>分类</label><select name="category"><option value="precious" ${q.category==='precious'?'selected':''}>贵金属</option><option value="crypto" ${q.category==='crypto'?'selected':''}>加密货币</option><option value="index" ${q.category==='index'?'selected':''}>指数</option><option value="oil" ${q.category==='oil'?'selected':''}>原油</option><option value="forex" ${q.category==='forex'?'selected':''}>外汇</option></select></div>
+        <div class="field full"><label>API源ID</label><input name="apiId" value="${esc(q.api_id || '')}" placeholder="加密币填 CoinGecko ID；贵金属/指数填 Yahoo 代码，如 GC=F / ^HSI / ^IXIC"></div>
+        <div class="field"><label>API来源</label><select name="apiProvider"><option value="coingecko" ${(q.api_provider||'coingecko')==='coingecko'?'selected':''}>CoinGecko</option><option value="yahoo" ${q.api_provider==='yahoo'?'selected':''}>Yahoo Finance</option><option value="tradingview" ${q.api_provider==='tradingview'?'selected':''}>TradingView</option></select></div>
       </form></div>
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveQuote('${symbol || ''}')">保存</button></div>
     </div></div>`;
@@ -717,7 +720,7 @@ async function openQuoteModal(symbol) {
 }
 async function saveQuote(symbol) {
   const f = new FormData($('#quoteForm'));
-  const body = { symbol: f.get('symbol'), name: f.get('name'), price: Number(f.get('price')), category: f.get('category'), apiId: f.get('apiId') };
+  const body = { symbol: f.get('symbol'), name: f.get('name'), price: Number(f.get('price')), category: f.get('category'), apiId: f.get('apiId'), apiProvider: f.get('apiProvider') };
   try {
     if (symbol) await api('/api/admin/quotes/' + encodeURIComponent(symbol), { method: 'PUT', body: JSON.stringify(body) });
     else await api('/api/admin/quotes', { method: 'POST', body: JSON.stringify(body) });
@@ -858,6 +861,47 @@ async function loadTeam(root) {
     $('#teamTbody').innerHTML = tr.map(t => `<tr><td>${esc(t.name || t.uid || t.member_id)}</td><td>${esc(t.user_level || '')}</td><td>${esc(rewardType[t.reward_type] || t.reward_type)}</td><td>${Number(t.amount).toFixed(4)}</td><td style="font-size:12px;">${esc(t.remark || t.biz_date || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">暂无</td></tr>';
   } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+/* ---------- Points Mall ---------- */
+async function loadPoints(root) {
+  try {
+    const [products, redemptions] = await Promise.all([api('/api/admin/point-products'), api('/api/admin/point-redemptions')]);
+    const productBody = products.map(p => '<tr><td>' + p.id + '</td><td><img src="' + esc(p.image || '') + '" style="width:58px;height:42px;object-fit:cover;border-radius:8px;" onerror="this.style.display=\'none\'"></td><td><b>' + esc(p.name) + '</b><br><small>' + esc(p.category) + '</small></td><td>' + Number(p.price_points || 0).toLocaleString() + '</td><td>' + Number(p.stock || 0) + '</td><td>' + statusPill(p.status) + '</td><td><button class="btn xs ghost" onclick="openPointProductModal(' + p.id + ')">编辑</button><button class="btn xs danger" onclick="deletePointProduct(' + p.id + ')">删除</button></td></tr>').join('') || '<tr><td colspan="7" class="empty">暂无商品</td></tr>';
+    const statusName = { pending:'待审核', approved:'已通过', rejected:'已拒绝', shipped:'已发货', completed:'已完成' };
+    const redemptionBody = redemptions.map(r => {
+      const actions = r.status === 'pending' ? '<button class="btn xs green" onclick="reviewPointRedemption(' + r.id + ',\'approve\')">通过</button><button class="btn xs danger" onclick="reviewPointRedemption(' + r.id + ',\'reject\')">拒绝</button>' : r.status === 'approved' ? '<button class="btn xs" onclick="reviewPointRedemption(' + r.id + ',\'ship\')">标记发货</button>' : r.status === 'shipped' ? '<button class="btn xs ghost" onclick="reviewPointRedemption(' + r.id + ',\'complete\')">完成</button>' : '—';
+      return '<tr><td>#' + r.id + '</td><td>' + esc(r.name || '') + '<br><small>' + esc(r.uid || '') + '</small></td><td><b>' + esc(r.product_name) + '</b><br><small>×' + r.quantity + '</small></td><td>' + Number(r.points_spent || 0).toLocaleString() + '</td><td>' + esc(statusName[r.status] || r.status) + '<br><small>' + esc(r.contact || '') + '</small></td><td style="max-width:220px;">' + esc(r.address || '') + '</td><td>' + fmtDate(r.created_at) + '</td><td>' + actions + '</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="empty">暂无兑换申请</td></tr>';
+    root.innerHTML = '<div class="panel"><div class="panel-head"><h3>积分商品管理</h3><button class="btn sm" onclick="openPointProductModal(0)">+ 新增商品</button></div><div style="padding:0 16px 12px;color:#64748b;font-size:12px;">用户跟单金额每满500 USDT，每日获得10积分；多笔跟单可叠加。</div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>ID</th><th>图片</th><th>商品</th><th>积分价格</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>' + productBody + '</tbody></table></div></div></div>' +
+      '<div class="panel"><div class="panel-head"><h3>积分兑换审核</h3></div><div class="panel-body"><div class="table-wrap"><table><thead><tr><th>ID</th><th>用户</th><th>商品</th><th>积分</th><th>状态/联系</th><th>地址</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' + redemptionBody + '</tbody></table></div></div></div>';
+  } catch (e) { root.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
+}
+async function openPointProductModal(id) {
+  let p = { name:'',category:'高端商品',price_points:0,image:'',description:'',stock:0,status:'active',sort_order:0 };
+  if (id) { const list = await api('/api/admin/point-products'); p = list.find(x => x.id === id) || p; }
+  const html = '<div class="modal-mask" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>' + (id ? '编辑商品' : '新增商品') + '</h3><button class="modal-close" onclick="closeModal()">×</button></div><div class="modal-body"><form id="pointProductForm" class="form-grid">' +
+    '<div class="field"><label>商品名称</label><input name="name" value="' + esc(p.name) + '"></div>' +
+    '<div class="field"><label>分类</label><input name="category" value="' + esc(p.category) + '" placeholder="汽车/苹果/高端商品/珠宝首饰/黄金白银"></div>' +
+    '<div class="field"><label>积分价格</label><input name="pricePoints" type="number" value="' + Number(p.price_points || 0) + '"></div>' +
+    '<div class="field"><label>库存</label><input name="stock" type="number" value="' + Number(p.stock || 0) + '"></div>' +
+    '<div class="field full"><label>商品图片URL</label><input name="image" value="' + esc(p.image || '') + '"></div>' +
+    '<div class="field full"><label>商品说明</label><textarea name="description" rows="3">' + esc(p.description || '') + '</textarea></div>' +
+    '<div class="field"><label>状态</label><select name="status"><option value="active" ' + (p.status === 'active' ? 'selected' : '') + '>上架</option><option value="inactive" ' + (p.status !== 'active' ? 'selected' : '') + '>下架</option></select></div>' +
+    '<div class="field"><label>排序</label><input name="sortOrder" type="number" value="' + Number(p.sort_order || 0) + '"></div>' +
+    '</form></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="savePointProduct(' + (id || 0) + ')">保存</button></div></div></div>';
+  const mask = document.createElement('div'); mask.innerHTML = html; document.body.appendChild(mask.firstElementChild);
+}
+async function savePointProduct(id) {
+  const f = new FormData($('#pointProductForm'));
+  const body = { name:f.get('name'), category:f.get('category'), pricePoints:Number(f.get('pricePoints')), image:f.get('image'), description:f.get('description'), stock:Number(f.get('stock')), status:f.get('status'), sortOrder:Number(f.get('sortOrder')) };
+  try { if (id) await api('/api/admin/point-products/' + id, { method:'PUT', body:JSON.stringify(body) }); else await api('/api/admin/point-products', { method:'POST', body:JSON.stringify(body) }); toast('已保存'); closeModal(); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+async function deletePointProduct(id) { if (!(await confirmDialog('确认删除该积分商品？'))) return; try { await api('/api/admin/point-products/' + id, { method:'DELETE' }); toast('已删除'); loadView(); } catch (e) { toast(e.message, 'error'); } }
+async function reviewPointRedemption(id, action) {
+  const label = { approve:'通过', reject:'拒绝并退回积分', ship:'标记发货', complete:'完成' }[action];
+  if (!(await confirmDialog('确认' + label + '？'))) return;
+  try { await api('/api/admin/point-redemptions/' + id + '/review', { method:'PUT', body:JSON.stringify({ action }) }); toast('已处理'); loadView(); } catch (e) { toast(e.message, 'error'); }
+}
+
 /* ---------- Settings ---------- */
 async function loadSettings(root) {
   root.innerHTML = `

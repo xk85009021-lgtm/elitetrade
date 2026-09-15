@@ -45,6 +45,7 @@ export function initDb() {
       is_verified INTEGER DEFAULT 0,
       avatar TEXT DEFAULT '',
       frozen_balance REAL DEFAULT 0,
+      points_balance INTEGER DEFAULT 0,
       user_level TEXT DEFAULT 'V1',
       created_at TEXT DEFAULT (datetime('now','localtime'))
     );
@@ -161,7 +162,8 @@ export function initDb() {
       ask_price REAL DEFAULT 0,
       change_percent REAL DEFAULT 0,
       category TEXT DEFAULT 'precious',
-      api_id TEXT
+      api_id TEXT,
+      api_provider TEXT DEFAULT 'coingecko'
     );
     CREATE TABLE IF NOT EXISTS investments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -445,7 +447,67 @@ export function initDb() {
   ensureColumn('transactions', 'currency', "TEXT DEFAULT 'USDT'");
   ensureColumn('transactions', 'expires_at', "TEXT DEFAULT ''");
   ensureColumn('transactions', 'cancelled_at', 'TEXT');
+  ensureColumn('users', 'points_balance', 'INTEGER DEFAULT 0');
+  ensureColumn('quotes', 'api_provider', "TEXT DEFAULT 'coingecko'");
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_user_status ON transactions(user_id,type,status,id DESC)'); } catch (e) {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS points_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      balance_after INTEGER NOT NULL DEFAULT 0,
+      type TEXT NOT NULL,
+      reference_type TEXT DEFAULT '',
+      reference_id INTEGER,
+      description TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_points_transactions_user ON points_transactions(user_id,id DESC);
+    CREATE TABLE IF NOT EXISTS daily_point_accruals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      follow_id INTEGER NOT NULL,
+      biz_date TEXT NOT NULL,
+      principal REAL NOT NULL DEFAULT 0,
+      points INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(follow_id,biz_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_point_accruals_user ON daily_point_accruals(user_id,biz_date);
+    CREATE TABLE IF NOT EXISTS point_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '高端商品',
+      price_points INTEGER NOT NULL DEFAULT 0,
+      image TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      stock INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_point_products_status ON point_products(status,sort_order,id DESC);
+    CREATE TABLE IF NOT EXISTS point_redemptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      product_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      points_spent INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      address TEXT DEFAULT '',
+      contact TEXT DEFAULT '',
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      remark TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      updated_at TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_point_redemptions_user ON point_redemptions(user_id,id DESC);
+    CREATE INDEX IF NOT EXISTS idx_point_redemptions_status ON point_redemptions(status,id DESC);
+  `);
 
   const addressCount = db.prepare('SELECT COUNT(*) c FROM deposit_addresses').get().c;
   if (addressCount === 0) {
@@ -511,6 +573,8 @@ export function initDb() {
     seedTransactions();
     seedKyc();  }
   seedContent();
+  seedPointProducts();
+  ensureMarketInstruments();
   if (process.env.SEED_DEMO_DATA === 'true') seedQuotes();
 }
 
@@ -609,6 +673,61 @@ function seedQuotes() {
   qs.forEach(q => ins.run(...q));
   const apiSt = db.prepare("UPDATE quotes SET api_id = ? WHERE symbol = ?");
   apiSt.run('bitcoin', 'BTC/USDT'); apiSt.run('ethereum', 'ETH/USDT'); apiSt.run('solana', 'SOL/USDT');
+}
+
+
+function seedPointProducts() {
+  const c = db.prepare('SELECT COUNT(*) c FROM point_products').get().c;
+  if (c > 0) return;
+  const st = db.prepare(`INSERT INTO point_products (name,category,price_points,image,description,stock,status,sort_order) VALUES (?,?,?,?,?,?, 'active', ?)`);
+  const products = [
+    ['保时捷 911 2025款','汽车',8000000,'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=900&auto=format&fit=crop&q=85','豪华跑车专属兑换资格，交付与服务方案由商城顾问对接。',1,1],
+    ['特斯拉 Model S Plaid','汽车',5000000,'https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=900&auto=format&fit=crop&q=85','高性能纯电旗舰车型兑换资格。',2,2],
+    ['iPhone 17 Pro Max 1TB','苹果',800000,'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=900&auto=format&fit=crop&q=85','旗舰苹果手机，官方渠道配置与颜色以库存为准。',20,3],
+    ['MacBook Pro M5 Max','苹果',1200000,'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=900&auto=format&fit=crop&q=85','专业级高性能笔记本电脑兑换资格。',15,4],
+    ['劳力士日志型腕表','高端商品',3000000,'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=900&auto=format&fit=crop&q=85','经典奢华腕表，款式与库存需由商城顾问确认。',3,5],
+    ['百达翡丽经典腕表','高端商品',6000000,'https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=900&auto=format&fit=crop&q=85','顶级腕表收藏级兑换资格。',1,6],
+    ['爱马仕铂金包','高端商品',4000000,'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=900&auto=format&fit=crop&q=85','高端奢侈品兑换资格，具体款式以实际采购为准。',2,7],
+    ['Cartier LOVE 手镯','珠宝首饰',2000000,'https://images.unsplash.com/photo-1617038220319-276d3cfab638?w=900&auto=format&fit=crop&q=85','经典珠宝首饰兑换资格。',5,8],
+    ['投资金条 100g','黄金白银',1500000,'https://images.unsplash.com/photo-1610375461246-83df859d849d?w=900&auto=format&fit=crop&q=85','Au9999 投资金条兑换资格，按兑换时库存交付。',10,9],
+    ['投资银条 1kg','黄金白银',300000,'https://images.unsplash.com/photo-1610375461369-d613b564824d?w=900&auto=format&fit=crop&q=85','Ag999 投资银条兑换资格。',30,10]
+  ];
+  const tx = db.transaction(() => products.forEach((item) => st.run(...item)));
+  tx();
+}
+
+function ensureMarketInstruments() {
+  const rows = [
+    ['XAUUSD','现货黄金','precious','yahoo','GC=F',0],
+    ['XAGUSD','现货白银','precious','yahoo','SI=F',0],
+    ['XPTUSD','现货铂金','precious','yahoo','PL=F',0],
+    ['XPDUSD','现货钯金','precious','yahoo','PA=F',0],
+    ['XCUUSD','现货铜','precious','yahoo','HG=F',0],
+    ['HSI','恒生指数','index','yahoo','^HSI',0],
+    ['NASDAQ','纳斯达克指数','index','yahoo','^IXIC',0],
+    ['BTC/USDT','比特币','crypto','coingecko','bitcoin',1],
+    ['ETH/USDT','以太坊','crypto','coingecko','ethereum',2],
+    ['USDT/USD','泰达币','crypto','coingecko','tether',3],
+    ['BNB/USDT','BNB','crypto','coingecko','binancecoin',4],
+    ['SOL/USDT','Solana','crypto','coingecko','solana',5],
+    ['USDC/USD','USD Coin','crypto','coingecko','usd-coin',6],
+    ['XRP/USDT','XRP','crypto','coingecko','ripple',7],
+    ['DOGE/USDT','狗狗币','crypto','coingecko','dogecoin',8],
+    ['ADA/USDT','Cardano','crypto','coingecko','cardano',9],
+    ['TRX/USDT','波场','crypto','coingecko','tron',10]
+  ];
+  const find = db.prepare('SELECT symbol FROM quotes WHERE symbol=?');
+  const ins = db.prepare("INSERT INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id,api_provider) VALUES (?,?,0,0,0,?,?,?)");
+  const upd = db.prepare("UPDATE quotes SET name=?,category=?,api_id=?,api_provider=? WHERE symbol=?");
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const symbol = row[0];
+      if (find.get(symbol)) upd.run(row[1], row[2], row[4], row[3], symbol);
+      else ins.run(symbol, row[1], row[2], row[4], row[3]);
+    }
+    db.prepare("UPDATE quotes SET api_provider='coingecko' WHERE category='crypto' AND (api_provider IS NULL OR api_provider='' OR api_provider='yahoo')").run();
+  });
+  tx();
 }
 
 function seedContent() {
