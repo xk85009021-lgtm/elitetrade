@@ -574,6 +574,7 @@ export function initDb() {
     seedKyc();  }
   seedContent();
   seedPointProducts();
+  ensureRequestedRooms();
   ensureMarketInstruments();
   if (process.env.SEED_DEMO_DATA === 'true') seedQuotes();
 }
@@ -675,6 +676,25 @@ function seedQuotes() {
   apiSt.run('bitcoin', 'BTC/USDT'); apiSt.run('ethereum', 'ETH/USDT'); apiSt.run('solana', 'SOL/USDT');
 }
 
+
+function ensureRequestedRooms() {
+  const marked = db.prepare("SELECT value FROM app_config WHERE key='vip_rooms_seeded_v1'").get();
+  if (marked && marked.value === '1') return;
+  const st = db.prepare(`INSERT OR IGNORE INTO rooms
+    (id,name,english_name,avatar,tags,total_profit,yield_rate,max_drawdown,risk_level,description,sparkline,monthly_return,avg_daily_return,category,is_hot,daily_yield_min,daily_yield_max,performance_fee,status,sort_order)
+    VALUES (?,?,?,?,?,0,?,0,?,?,?,?,?,?,?,?,?,?, 'active',?)`);
+  const rooms = [
+    ['vip-stable-arbitrage','稳健套利一号','Stable Arbitrage I','https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=200&auto=format&fit=crop&q=80','["量化套利","稳健型"]',0.6,'稳健型','多市场低相关套利策略，目标日化收益率0.5%-0.7%。','[10,14,18,23,29,35,42,48,55,63]',18,0.6,'forex',1,0.5,0.7,10,10],
+    ['vip-gold-trend','黄金趋势精英','Gold Trend Elite','https://images.unsplash.com/photo-1610375461246-83df859d849d?w=200&auto=format&fit=crop&q=80','["黄金","趋势"]',0.9,'稳健型','黄金与贵金属趋势跟随策略，目标日化收益率0.8%-1.0%。','[8,13,19,27,34,40,49,57,66,76]',26,0.9,'precious',1,0.8,1.0,12,20],
+    ['vip-crypto-alpha','加密阿尔法','Crypto Alpha','https://images.unsplash.com/photo-1621761191319-c6fb62004040?w=200&auto=format&fit=crop&q=80','["加密资产","量化"]',1.1,'量化高频','主流加密资产多因子策略，目标日化收益率1.0%-1.2%。','[12,18,25,31,39,46,56,61,72,84]',32,1.1,'crypto',0,1.0,1.2,15,30],
+    ['vip-global-index','全球指数增强','Global Index Plus','https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200&auto=format&fit=crop&q=80','["恒指","纳斯达克"]',1.35,'激进型','恒指与纳斯达克指数联动策略，目标日化收益率1.2%-1.5%。','[6,14,22,28,36,47,52,64,73,88]',40,1.35,'index',0,1.2,1.5,18,40]
+  ];
+  const tx = db.transaction(() => {
+    rooms.forEach((row) => st.run(...row));
+    db.prepare("INSERT INTO app_config (key,value,updated_at) VALUES ('vip_rooms_seeded_v1','1',datetime('now','localtime')) ON CONFLICT(key) DO UPDATE SET value='1',updated_at=datetime('now','localtime')").run();
+  });
+  tx();
+}
 
 function seedPointProducts() {
   const c = db.prepare('SELECT COUNT(*) c FROM point_products').get().c;
