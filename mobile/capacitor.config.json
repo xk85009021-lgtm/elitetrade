@@ -1,0 +1,18 @@
+{
+  "appId": "com.yingtocopy.app",
+  "appName": "盈透copy",
+  "webDir": "dist",
+  "server": {
+    "url": "https://your-domain.com",
+    "androidScheme": "https",
+    "cleartext": false,
+    "allowNavigation": ["your-domain.com"]
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#004ac6",
+      "showSpinner": false
+    }
+  }
+}
