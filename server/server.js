@@ -157,6 +157,42 @@ function parseArr(s) {
   try { return typeof s === 'string' ? JSON.parse(s) : (s || []); } catch { return []; }
 }
 
+function quoteVisual(symbol, category) {
+  const key = String(symbol || '').toUpperCase();
+  const cryptoColors = { BTC:'#F7931A', ETH:'#627EEA', USDT:'#26A17B', BNB:'#F3BA2F', SOL:'#14B8A6', USDC:'#2775CA', XRP:'#23292F', DOGE:'#C2A633', ADA:'#2563EB', TRX:'#EF0027' };
+  const tradfiLogos = {
+    xGOOGL:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558966499374b02ce123e_GOOGLx.png',
+    xSPCX:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6a299151671e5a8f636b0b33_SPCXx.png',
+    xCRCL:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558aa9c505804887ec2a9_CRCLx.png',
+    xSNDK:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/69c4702538cc5a9b19dd2ba2_SNDKx.png',
+    xTSLA:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558f9a5d8bb1d73db841b_TSLAx.png',
+    xHOOD:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558e1606fb61b38d65df0_HOODx.png',
+    xAAPL:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab5589b93cedf3d16c0ef20_AAPLx.png',
+    xNVDA:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6aa0128df63915dbafacef5d_NVDAx.png',
+    xMU:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558d0ea22eeb1eb847ed7_MUx.png',
+    xMETA:'https://cdn.prod.website-files.com/655f3efc4be468487052e35a/6ab558ceb4764fb9c5716579_METAx.png'
+  };
+  if (category === 'crypto') {
+    const base = key.split('/')[0];
+    return { iconUrl: 'https://assets.coincap.io/assets/icons/' + base.toLowerCase() + '@2x.png', iconText: base.slice(0, 3), iconBg: cryptoColors[base] || '#1E293B' };
+  }
+  if (category === 'tradfi' || tradfiLogos[symbol] || tradfiLogos[key]) {
+    return { iconUrl: tradfiLogos[symbol] || tradfiLogos[key] || '', iconText: key.replace(/^X/, '').slice(0, 3), iconBg: '#FFFFFF' };
+  }
+  const commodity = {
+    XAUUSD: { iconUrl:'https://img.icons8.com/fluency/96/gold-bars.png', iconText:'Au', iconBg:'#FFF7D6' },
+    XAGUSD: { iconUrl:'https://img.icons8.com/fluency/96/silver-bars.png', iconText:'Ag', iconBg:'#F1F5F9' },
+    XPTUSD: { iconUrl:'', iconText:'Pt', iconBg:'#E2E8F0' },
+    XPDUSD: { iconUrl:'', iconText:'Pd', iconBg:'#E2E8F0' },
+    XCUUSD: { iconUrl:'', iconText:'Cu', iconBg:'#FDE8D7' },
+    HSI: { iconUrl:'https://www.google.com/s2/favicons?domain=hsi.com.hk&sz=128', iconText:'HSI', iconBg:'#FEE2E2' },
+    NASDAQ: { iconUrl:'https://www.google.com/s2/favicons?domain=nasdaq.com&sz=128', iconText:'IXIC', iconBg:'#DBEAFE' },
+    UKOIL: { iconUrl:'https://img.icons8.com/fluency/96/oil-industry.png', iconText:'OIL', iconBg:'#E2E8F0' },
+    USOIL: { iconUrl:'https://img.icons8.com/fluency/96/oil-industry.png', iconText:'WTI', iconBg:'#E2E8F0' }
+  }[key];
+  return commodity || { iconUrl:'', iconText:key.replace(/[^A-Z0-9]/g,'').slice(0,3) || 'FX', iconBg:'#E2E8F0' };
+}
+
 function toProject(pr) {
   return {
     id: pr.id, title: pr.title, subtitle: pr.subtitle, image: pr.image,
@@ -196,6 +232,7 @@ function toUser(u) {
 }
 const now = () => new Date().toISOString();
 function round2(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100; }
+function round4(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000; }
 
 // ---------- auth ----------
 app.post('/api/auth/login', (req, res) => {
@@ -827,7 +864,7 @@ app.put('/api/public/follows/:id/continue', userAuth, (req, res) => {
 app.get('/api/public/quotes', (req, res) => {
   const rows = db.prepare('SELECT symbol,name,price,ask_price as askPrice,change_percent as change,category,api_provider,api_id,updated_at FROM quotes ORDER BY category,symbol').all();
   const history = db.prepare('SELECT price FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 30');
-  res.json(rows.map((row) => ({ ...row, sparkline: history.all(row.symbol).map((item) => Number(item.price)).reverse() })));
+  res.json(rows.map((row) => ({ ...row, ...quoteVisual(row.symbol, row.category), price: round4(row.price), askPrice: round4(row.askPrice), change: round4(row.change), sparkline: history.all(row.symbol).map((item) => round4(item.price)).reverse() })));
 });
 
 app.get('/api/public/referral', userAuth, (req, res) => {
@@ -1059,12 +1096,35 @@ app.get('/api/public/points', userAuth, (req, res) => {
   const user = db.prepare('SELECT points_balance FROM users WHERE id=?').get(req.user.id);
   const transactions = db.prepare('SELECT * FROM points_transactions WHERE user_id=? ORDER BY id DESC LIMIT 100').all(req.user.id);
   const redemptions = db.prepare('SELECT * FROM point_redemptions WHERE user_id=? ORDER BY id DESC LIMIT 50').all(req.user.id);
+  const config = db.prepare("SELECT value FROM app_config WHERE key='daily_checkin_points'").get();
+  const checkinPoints = Math.max(1, Number(config?.value || 10));
+  const checkedInToday = !!db.prepare('SELECT id FROM point_checkins WHERE user_id=? AND checkin_date=?').get(req.user.id, businessDate());
   res.json({
     balance: Number(user?.points_balance || 0),
     rule: '跟单金额每满500 USDT，每日获得10积分；多笔跟单可叠加。',
+    checkinPoints,
+    checkedInToday,
     transactions: transactions.map((item) => ({ id:item.id, amount:item.amount, balanceAfter:item.balance_after, type:item.type, description:item.description, createdAt:item.created_at })),
     redemptions: redemptions.map((item) => ({ id:item.id, productId:item.product_id, productName:item.product_name, quantity:item.quantity, pointsSpent:item.points_spent, status:item.status, remark:item.remark, createdAt:item.created_at }))
   });
+});
+app.post('/api/public/points/checkin', userAuth, (req, res) => {
+  if (!requireUsableAccount(req, res)) return;
+  const checkinDate = businessDate();
+  const config = db.prepare("SELECT value FROM app_config WHERE key='daily_checkin_points'").get();
+  const points = Math.max(1, Number(config?.value || 10));
+  const tx = db.transaction(() => {
+    const info = db.prepare('INSERT OR IGNORE INTO point_checkins (user_id,checkin_date,points) VALUES (?,?,?)').run(req.user.id, checkinDate, points);
+    if (!info.changes) return { code:409, error:'今日已签到，每天只能领取一次' };
+    db.prepare('UPDATE users SET points_balance=points_balance+? WHERE id=?').run(points, req.user.id);
+    const balance = Number(db.prepare('SELECT points_balance FROM users WHERE id=?').get(req.user.id).points_balance || 0);
+    db.prepare('INSERT INTO points_transactions (user_id,amount,balance_after,type,reference_type,description) VALUES (?,?,?,?,?,?)').run(req.user.id, points, balance, 'daily_checkin', 'checkin', checkinDate + ' 每日签到');
+    addNotification(req.user.id, '签到积分到账', '今日签到获得 ' + points + ' 积分。', 'points');
+    return { ok:true, points, balance, checkinDate };
+  });
+  const out = tx();
+  if (out.error) return res.status(out.code).json({ error: out.error });
+  res.json(out);
 });
 app.get('/api/public/points/products', (req, res) => {
   res.json(db.prepare("SELECT * FROM point_products WHERE status='active' ORDER BY sort_order ASC, id DESC").all());
@@ -1649,14 +1709,15 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ================= 交易品种（行情）管理 =================
 app.get('/api/admin/quotes', auth, (req, res) => {
-  res.json(db.prepare('SELECT * FROM quotes ORDER BY category, symbol').all());
+  const rows = db.prepare('SELECT * FROM quotes ORDER BY category, symbol').all();
+  res.json(rows.map((row) => ({ ...row, ...quoteVisual(row.symbol, row.category), price: round4(row.price), ask_price: round4(row.ask_price), change_percent: round4(row.change_percent) })));
 });
 app.post('/api/admin/quotes', auth, (req, res) => {
   const b = req.body || {};
   if (!b.symbol) return res.status(400).json({ error: '请输入品种代码' });
   const category = b.category || 'forex';
   db.prepare('INSERT OR REPLACE INTO quotes (symbol,name,price,ask_price,change_percent,category,api_id,api_provider) VALUES (?,?,?,?,?,?,?,?)')
-    .run(String(b.symbol).toUpperCase(), b.name || b.symbol, Number(b.price) || 0, Number(b.askPrice) || Number(b.price) || 0, Number(b.change) || 0, category, b.apiId || null, b.apiProvider || (category === 'crypto' ? 'coingecko' : 'yahoo'));
+    .run(String(b.symbol).toUpperCase(), b.name || b.symbol, round4(b.price), round4(b.askPrice ?? b.price), round4(b.change), category, b.apiId || null, b.apiProvider || (category === 'crypto' ? 'coingecko' : category === 'tradfi' ? 'dexscreener' : 'yahoo'));
   res.json({ ok: true });
 });
 app.put('/api/admin/quotes/:symbol', auth, (req, res) => {
@@ -1664,7 +1725,7 @@ app.put('/api/admin/quotes/:symbol', auth, (req, res) => {
   const cur = db.prepare('SELECT * FROM quotes WHERE symbol = ?').get(req.params.symbol);
   if (!cur) return res.status(404).json({ error: '品种不存在' });
   db.prepare("UPDATE quotes SET name=?, price=?, ask_price=?, change_percent=?, category=?, api_id=?, api_provider=?, updated_at=datetime('now','localtime') WHERE symbol=?")
-    .run(b.name ?? cur.name, b.price ?? cur.price, b.askPrice ?? cur.ask_price, b.change ?? cur.change_percent, b.category ?? cur.category, b.apiId ?? cur.api_id, b.apiProvider ?? cur.api_provider ?? ((b.category ?? cur.category) === 'crypto' ? 'coingecko' : 'yahoo'), req.params.symbol);
+    .run(b.name ?? cur.name, round4(b.price ?? cur.price), round4(b.askPrice ?? cur.ask_price), round4(b.change ?? cur.change_percent), b.category ?? cur.category, b.apiId ?? cur.api_id, b.apiProvider ?? cur.api_provider ?? ((b.category ?? cur.category) === 'crypto' ? 'coingecko' : (b.category ?? cur.category) === 'tradfi' ? 'dexscreener' : 'yahoo'), req.params.symbol);
   res.json({ ok: true });
 });
 app.delete('/api/admin/quotes/:symbol', auth, (req, res) => {
@@ -1682,7 +1743,7 @@ app.post('/api/admin/quotes/refresh', auth, async (req, res) => {
 app.get('/api/public/quotes/history', (req, res) => {
   const symbol = String(req.query.symbol || '').toUpperCase();
   const rows = db.prepare('SELECT price, ts FROM price_history WHERE symbol = ? ORDER BY id DESC LIMIT 60').all(symbol);
-  res.json(rows.reverse());
+  res.json(rows.reverse().map((item) => ({ ...item, price: round4(item.price) })));
 });
 
 async function refreshCryptoTop10() {
@@ -1700,7 +1761,7 @@ async function refreshCryptoTop10() {
       const symbol = stable.has(sym) ? sym.toUpperCase() + '/USD' : sym.toUpperCase() + '/USDT';
       const price = Number(coin.current_price) || 0;
       const change = Number(coin.price_change_percentage_24h) || 0;
-      insert.run(symbol, coin.name || symbol, price, price, change, coin.id || sym);
+      insert.run(symbol, coin.name || symbol, round4(price), round4(price), round4(change), coin.id || sym);
       count++;
     }
   });
@@ -1719,12 +1780,130 @@ async function fetchYahooQuote(row) {
   if (!Number.isFinite(price) || price <= 0) throw new Error('Yahoo no price ' + row.symbol);
   const previous = Number(result?.meta?.chartPreviousClose || result?.meta?.previousClose || 0);
   const change = previous > 0 ? ((price - previous) / previous) * 100 : Number(result?.meta?.regularMarketChangePercent || 0);
-  return { price, change: Number(change.toFixed(4)) };
+  return { price: round4(price), change: round4(change) };
+}
+
+function parseMarketNumber(value) {
+  return Number(String(value ?? '').replace(/[$,%\s]/g, '')) || 0;
+}
+
+async function fetchNasdaqQuote(row) {
+  const map = {
+    xGOOGL:'GOOGL', xSPCX:'SPCX', xCRCL:'CRCL', xSNDK:'SNDK', xTSLA:'TSLA', xHOOD:'HOOD',
+    xAAPL:'AAPL', xNVDA:'NVDA', xMU:'MU', xMETA:'META', NASDAQ:'COMP', USOIL:'CL'
+  };
+  const symbol = map[row.symbol] || map[String(row.symbol).toUpperCase()];
+  if (!symbol) throw new Error('Nasdaq unsupported symbol ' + row.symbol);
+  const assetClass = row.symbol === 'NASDAQ' ? 'index' : 'stocks';
+  const resp = await fetch('https://api.nasdaq.com/api/quote/' + encodeURIComponent(symbol) + '/info?assetclass=' + assetClass, {
+    headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json,text/plain,*/*' },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!resp.ok) throw new Error('Nasdaq HTTP ' + resp.status + ' ' + row.symbol);
+  const json = await resp.json();
+  const data = json?.data;
+  const price = parseMarketNumber(data?.primaryData?.lastSalePrice);
+  if (!(price > 0)) throw new Error('Nasdaq no price ' + row.symbol);
+  const change = parseMarketNumber(data?.primaryData?.percentageChange);
+  return { price: round4(price), change: round4(change) };
+}
+
+async function fetchGoldApiPrices(rows) {
+  const out = {};
+  const map = { XAUUSD:'XAU', XAGUSD:'XAG', XPTUSD:'XPT', XPDUSD:'XPD', XCUUSD:'HG' };
+  const candidates = rows.filter((row) => map[row.symbol]);
+  const results = await Promise.allSettled(candidates.map(async (row) => {
+    const resp = await fetch('https://api.gold-api.com/price/' + map[row.symbol], {
+      headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!resp.ok) throw new Error('Gold API HTTP ' + resp.status);
+    const json = await resp.json();
+    const price = Number(json?.price || 0);
+    if (!(price > 0)) throw new Error('Gold API no price ' + row.symbol);
+    return { row, price, change: Number(row.change_percent || 0) };
+  }));
+  for (const item of results) {
+    if (item.status !== 'fulfilled') continue;
+    out[item.value.row.symbol] = { price: round4(item.value.price), change: round4(item.value.change), source:'gold-api' };
+  }
+  return out;
+}
+
+async function fetchHsiQuote() {
+  const resp = await fetch('https://www.hsi.com.hk/data/eng/rt/index-series/hsi/performance.do?' + Date.now(), {
+    headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!resp.ok) throw new Error('HSI HTTP ' + resp.status);
+  const json = await resp.json();
+  const lists = Array.isArray(json?.indexSeriesList) ? json.indexSeriesList : [];
+  const indexes = lists.flatMap((series) => Array.isArray(series?.indexList) ? series.indexList : []);
+  const main = indexes.find((item) => item?.indexCode === '00001.00') || indexes.find((item) => item?.indexName === 'Hang Seng Index');
+  const price = parseMarketNumber(main?.indexValue);
+  if (!(price > 0)) throw new Error('HSI no price');
+  return { price: round4(price), change: round4(parseMarketNumber(main?.changePercentage)), source:'hsi-official' };
+}
+
+async function fetchEiaOilPrices(rows) {
+  const out = {};
+  const map = { UKOIL:'RBRTE', USOIL:'RWTC' };
+  const apiKey = process.env.EIA_API_KEY || 'DEMO_KEY';
+  const candidates = rows.filter((row) => map[row.symbol]);
+  const results = await Promise.allSettled(candidates.map(async (row) => {
+    const series = map[row.symbol];
+    const url = 'https://api.eia.gov/v2/petroleum/pri/spt/data/?frequency=daily&data%5B0%5D=value&facets%5Bseries%5D%5B%5D=' + series + '&sort%5B0%5D%5Bcolumn%5D=period&sort%5B0%5D%5Bdirection%5D=desc&length=2&api_key=' + encodeURIComponent(apiKey);
+    const resp = await fetch(url, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) throw new Error('EIA HTTP ' + resp.status);
+    const json = await resp.json();
+    const data = Array.isArray(json?.response?.data) ? json.response.data : [];
+    const price = Number(data[0]?.value || 0);
+    const previous = Number(data[1]?.value || 0);
+    if (!(price > 0)) throw new Error('EIA no price ' + row.symbol);
+    const change = previous > 0 ? ((price - previous) / previous) * 100 : Number(row.change_percent || 0);
+    return { row, price, change };
+  }));
+  for (const item of results) {
+    if (item.status !== 'fulfilled') continue;
+    out[item.value.row.symbol] = { price: round4(item.value.price), change: round4(item.value.change), source:'eia' };
+  }
+  return out;
+}
+
+async function fetchCoinLorePrices(rows) {
+  const out = {};
+  const ids = { 'BTC/USDT':90, 'ETH/USDT':80, 'USDT/USD':518, 'USDC/USD':33285, 'BNB/USDT':2710, 'SOL/USDT':48543, 'XRP/USDT':58, 'ADA/USDT':257, 'DOGE/USDT':2, 'TRX/USDT':2713 };
+  const wanted = rows.map((row) => ({ row, id: ids[row.symbol] })).filter((item) => item.id);
+  if (!wanted.length) return out;
+  const uniqueIds = [...new Set(wanted.map((item) => item.id))];
+  const resp = await fetch('https://api.coinlore.net/api/ticker/?id=' + uniqueIds.join(','), {
+    headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!resp.ok) throw new Error('CoinLore HTTP ' + resp.status);
+  const list = await resp.json();
+  const byId = new Map((Array.isArray(list) ? list : []).map((item) => [Number(item.id), item]));
+  for (const { row, id } of wanted) {
+    const item = byId.get(Number(id));
+    const price = Number(item?.price_usd || 0);
+    if (!(price > 0)) continue;
+    out[row.symbol] = { price: round4(price), change: round4(item?.percent_change_24h || 0), source:'coinlore' };
+  }
+  return out;
+}
+
+function tradingViewTicker(row) {
+  const map = {
+    XAUUSD:'OANDA:XAUUSD', XAGUSD:'OANDA:XAGUSD', XPTUSD:'OANDA:XPTUSD', XPDUSD:'OANDA:XPDUSD', XCUUSD:'OANDA:XCUUSD',
+    HSI:'TVC:HSI', NASDAQ:'NASDAQ:IXIC', UKOIL:'TVC:UKOIL', USOIL:'TVC:USOIL',
+    xGOOGL:'NASDAQ:GOOGL', xSPCX:'NASDAQ:SPCX', xCRCL:'NYSE:CRCL', xSNDK:'NASDAQ:SNDK', xTSLA:'NASDAQ:TSLA',
+    xHOOD:'NASDAQ:HOOD', xAAPL:'NASDAQ:AAPL', xNVDA:'NASDAQ:NVDA', xMU:'NASDAQ:MU', xMETA:'NASDAQ:META'
+  };
+  return map[row.symbol] || (row.api_id && String(row.api_id).includes(':') ? row.api_id : null);
 }
 
 async function fetchTradingViewPrices(rows) {
-  const tvMap = { XAUUSD:'OANDA:XAUUSD', XAGUSD:'OANDA:XAGUSD', XPTUSD:'OANDA:XPTUSD', XPDUSD:'OANDA:XPDUSD', XCUUSD:'OANDA:XCUUSD', HSI:'TVC:HSI', NASDAQ:'NASDAQ:IXIC' };
-  const pairs = rows.map((row) => ({ row, ticker: tvMap[row.symbol] })).filter((item) => item.ticker);
+  const pairs = rows.map((row) => ({ row, ticker: tradingViewTicker(row) })).filter((item) => item.ticker);
   if (!pairs.length) return {};
   const resp = await fetch('https://scanner.tradingview.com/global/scan', {
     method: 'POST',
@@ -1741,19 +1920,141 @@ async function fetchTradingViewPrices(rows) {
     const row = byTicker.get(ticker);
     if (!row || !Array.isArray(item.d)) continue;
     const price = Number(item.d[0]);
-    if (price > 0) out[row.symbol] = { price, change: Number(item.d[1] || 0) };
+    if (price > 0) out[row.symbol] = { price: round4(price), change: round4(item.d[1] || 0), source: 'tradingview' };
   }
   return out;
 }
 
+async function fetchDexScreenerPrices(rows) {
+  const out = {};
+  const addresses = rows.map((row) => String(row.api_id || '').trim()).filter(Boolean);
+  if (!addresses.length) return out;
+  const urls = [
+    'https://api.dexscreener.com/latest/dex/tokens/' + addresses.join(','),
+    'https://api.dexscreener.com/tokens/v1/solana/' + addresses.join(',')
+  ];
+  let pairs = null;
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' }, signal: AbortSignal.timeout(12000) });
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      pairs = Array.isArray(json) ? json : (Array.isArray(json.pairs) ? json.pairs : null);
+      if (pairs) break;
+    } catch (e) {}
+  }
+  if (!pairs) return out;
+  const normalized = new Map(rows.map((row) => [String(row.api_id || '').toLowerCase(), row]));
+  const best = new Map();
+  for (const pair of pairs) {
+    const address = String(pair?.baseToken?.address || '').toLowerCase();
+    const row = normalized.get(address);
+    if (!row || !pair.priceUsd) continue;
+    const liquidity = Number(pair?.liquidity?.usd || 0);
+    const prev = best.get(address);
+    if (!prev || liquidity > prev.liquidity) best.set(address, { row, pair, liquidity });
+  }
+  for (const { row, pair } of best.values()) {
+    out[row.symbol] = {
+      price: round4(pair.priceUsd),
+      change: round4(pair?.priceChange?.h24 || 0),
+      source: 'dexscreener',
+      liquidity: Number(pair?.liquidity?.usd || 0),
+      pairAddress: pair?.pairAddress || ''
+    };
+  }
+  return out;
+}
+
+async function fetchJupiterPrices(rows) {
+  const out = {};
+  const ids = rows.map((row) => String(row.api_id || '').trim()).filter(Boolean);
+  if (!ids.length) return out;
+  try {
+    const resp = await fetch('https://lite-api.jup.ag/price/v3?ids=' + encodeURIComponent(ids.join(',')), { headers: { 'User-Agent':'Mozilla/5.0', 'Accept':'application/json' }, signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) return out;
+    const json = await resp.json();
+    for (const row of rows) {
+      const item = json?.[row.api_id] || json?.data?.[row.api_id];
+      const price = typeof item === 'number' ? item : Number(item?.usdPrice ?? item?.price ?? 0);
+      const change = Number(item?.priceChange24h ?? item?.priceChange24H ?? 0);
+      if (price > 0) out[row.symbol] = { price: round4(price), change: round4(change), source: 'jupiter' };
+    }
+  } catch (e) {}
+  return out;
+}
+
+async function fetchCryptoPrices(rows) {
+  const out = {};
+  try { Object.assign(out, await fetchCoinLorePrices(rows)); } catch (e) {}
+  if (rows.every((row) => out[row.symbol])) return out;
+  const stable = new Set(['USDT','USDC','DAI','FDUSD','TUSD']);
+  const binanceRows = rows.filter((row) => !stable.has(String(row.symbol || '').split('/')[0]) && /USDT$/i.test(String(row.symbol || '')));
+  if (binanceRows.length) {
+    try {
+      const symbols = binanceRows.map((row) => String(row.symbol).replace('/', ''));
+      const byBinance = new Map(binanceRows.map((row) => [String(row.symbol).replace('/', ''), row]));
+      const resp = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=' + encodeURIComponent(JSON.stringify(symbols)), { headers: { 'User-Agent':'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (Array.isArray(json)) for (const item of json) {
+          const row = byBinance.get(String(item.symbol));
+          const price = Number(item.lastPrice);
+          if (row && price > 0) out[row.symbol] = { price: round4(price), change: round4(item.priceChangePercent || 0), source: 'binance' };
+        }
+      }
+    } catch (e) {}
+  }
+  const missing = rows.filter((row) => !out[row.symbol]);
+  const geckoIds = missing.map((row) => row.api_id).filter(Boolean);
+  if (geckoIds.length) {
+    try {
+      const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(geckoIds.join(',')) + '&vs_currencies=usd&include_24hr_change=true', { headers: { 'User-Agent':'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const json = await resp.json();
+        for (const row of missing) {
+          const item = json?.[row.api_id];
+          const price = Number(item?.usd || 0);
+          if (price > 0) out[row.symbol] = { price: round4(price), change: round4(item?.usd_24h_change || 0), source: 'coingecko' };
+        }
+      }
+    } catch (e) {}
+  }
+  const remaining = rows.filter((row) => !out[row.symbol]);
+  if (remaining.length) {
+    const results = await Promise.allSettled(remaining.map(async (row) => {
+      const base = String(row.symbol).split('/')[0];
+      const resp = await fetch('https://api.coinbase.com/v2/prices/' + base + '-USD/spot', { headers: { 'User-Agent':'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) throw new Error('Coinbase HTTP ' + resp.status);
+      const json = await resp.json();
+      const price = Number(json?.data?.amount);
+      if (!(price > 0)) throw new Error('Coinbase no price');
+      return { row, price, change: Number(row.change_percent || 0) };
+    }));
+    for (const item of results) if (item.status === 'fulfilled') out[item.value.row.symbol] = { price: round4(item.value.price), change: round4(item.value.change), source: 'coinbase' };
+  }
+  return out;
+}
+
+let quoteHistoryWrites = 0;
 function saveQuotePrice(row, price, change, source) {
+  const validPrice = Number(price);
+  if (!Number.isFinite(validPrice) || validPrice <= 0) return false;
+  const validChange = Number.isFinite(Number(change)) ? round4(change) : round4(row.change_percent || 0);
   db.prepare("UPDATE quotes SET price=?,ask_price=?,change_percent=?,api_provider=?,updated_at=datetime('now','localtime') WHERE symbol=?")
-    .run(price, price, Number(change || 0), source, row.symbol);
-  db.prepare('INSERT INTO price_history (symbol,price) VALUES (?,?)').run(row.symbol, price);
+    .run(round4(validPrice), round4(validPrice), validChange, source, row.symbol);
+  db.prepare('INSERT INTO price_history (symbol,price) VALUES (?,?)').run(row.symbol, round4(validPrice));
+  quoteHistoryWrites++;
+  if (quoteHistoryWrites % 100 === 0) {
+    const symbols = db.prepare('SELECT DISTINCT symbol FROM price_history').all();
+    const trim = db.prepare('DELETE FROM price_history WHERE symbol=? AND id NOT IN (SELECT id FROM price_history WHERE symbol=? ORDER BY id DESC LIMIT 500)');
+    for (const item of symbols) trim.run(item.symbol, item.symbol);
+  }
+  return true;
 }
 
 async function refreshMarketQuotes() {
-  const result = { ok: false, top10: 0, crypto: 0, market: 0, failed: 0, updated: 0 };
+  const result = { ok:false, top10:0, crypto:0, tradfi:0, market:0, failed:0, updated:0, updatedAt:new Date().toISOString() };
   const existingCryptoCount = db.prepare("SELECT COUNT(*) c FROM quotes WHERE category='crypto'").get().c;
   if (existingCryptoCount < 10) {
     try { result.top10 = await refreshCryptoTop10(); } catch (e) { result.failed++; }
@@ -1761,81 +2062,87 @@ async function refreshMarketQuotes() {
   const cryptoRows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
   try {
     const prices = await fetchCryptoPrices(cryptoRows);
-    const cryptoChangeRows = db.prepare("SELECT * FROM quotes WHERE category='crypto'").all();
-    for (const row of cryptoChangeRows) {
-      const price = prices[row.symbol] || prices[String(row.symbol).replace('/','')] || prices[String(row.symbol).split('/')[0]];
-      if (price) {
-        const previous = Number(row.price || 0);
-        const change = previous > 0 ? ((Number(price) - previous) / previous) * 100 : 0;
-        saveQuotePrice(row, Number(price), change, 'crypto');
-        result.crypto++;
-      }
+    for (const row of cryptoRows) {
+      const quote = prices[row.symbol];
+      if (quote && saveQuotePrice(row, quote.price, quote.change, quote.source || 'crypto')) result.crypto++;
+      else result.failed++;
     }
   } catch (e) { result.failed++; }
 
-  const marketRows = db.prepare("SELECT * FROM quotes WHERE api_provider='yahoo' OR category IN ('precious','index')").all();
-  let tvPrices = {};
-  try { tvPrices = await fetchTradingViewPrices(marketRows); } catch (e) { tvPrices = {}; }
-  const marketResults = await Promise.allSettled(marketRows.map(async (row) => ({ row, quote: await fetchYahooQuote(row) })));
-  for (let i = 0; i < marketResults.length; i++) {
-    const item = marketResults[i];
-    const row = marketRows[i];
-    if (item.status === 'fulfilled') {
-      saveQuotePrice(row, item.value.quote.price, item.value.quote.change, 'yahoo');
-      result.market++;
-    } else if (tvPrices[row.symbol]) {
-      saveQuotePrice(row, tvPrices[row.symbol].price, tvPrices[row.symbol].change, 'tradingview');
-      result.market++;
-    } else result.failed++;
+  const tradfiRows = db.prepare("SELECT * FROM quotes WHERE category='tradfi' OR api_provider IN ('dexscreener','jupiter')").all();
+  if (tradfiRows.length) {
+    const tokenPrices = {};
+    const nasdaqRows = tradfiRows.filter((row) => ['xGOOGL','xSPCX','xCRCL','xSNDK','xTSLA','xHOOD','xAAPL','xNVDA','xMU','xMETA'].includes(row.symbol));
+    const nasdaqResults = await Promise.allSettled(nasdaqRows.map(async (row) => ({ row, quote: await fetchNasdaqQuote(row) })));
+    for (const item of nasdaqResults) {
+      if (item.status === 'fulfilled') tokenPrices[item.value.row.symbol] = { ...item.value.quote, source:'nasdaq' };
+    }
+    const missing = tradfiRows.filter((row) => !tokenPrices[row.symbol]);
+    if (missing.length) {
+      try { Object.assign(tokenPrices, await fetchDexScreenerPrices(missing)); } catch (e) {}
+    }
+    const stillMissing = tradfiRows.filter((row) => !tokenPrices[row.symbol]);
+    if (stillMissing.length) {
+      try { Object.assign(tokenPrices, await fetchJupiterPrices(stillMissing)); } catch (e) {}
+    }
+    const finalMissing = tradfiRows.filter((row) => !tokenPrices[row.symbol]);
+    if (finalMissing.length) {
+      try { Object.assign(tokenPrices, await fetchTradingViewPrices(finalMissing)); } catch (e) {}
+    }
+    for (const row of tradfiRows) {
+      const quote = tokenPrices[row.symbol];
+      if (quote && saveQuotePrice(row, quote.price, quote.change, quote.source || 'dexscreener')) result.tradfi++;
+      else result.failed++;
+    }
   }
-  result.updated = result.crypto + result.market;
+
+  const marketRows = db.prepare("SELECT * FROM quotes WHERE category IN ('precious','index','oil') OR (api_provider IN ('yahoo','tradingview') AND category<>'tradfi')").all();
+  const [goldPrices, eiaOilPrices, hsiQuote, nasdaqQuote] = await Promise.all([
+    fetchGoldApiPrices(marketRows).catch(() => ({})),
+    fetchEiaOilPrices(marketRows).catch(() => ({})),
+    fetchHsiQuote().catch(() => null),
+    fetchNasdaqQuote({ symbol:'NASDAQ' }).catch(() => null)
+  ]);
+  const basePrices = { ...goldPrices, ...eiaOilPrices };
+  if (hsiQuote) basePrices.HSI = { ...hsiQuote, source:hsiQuote.source || 'hsi-official' };
+  if (nasdaqQuote) basePrices.NASDAQ = { ...nasdaqQuote, source:'nasdaq' };
+  const tvRows = marketRows.filter((row) => !basePrices[row.symbol]);
+  let tvPrices = {};
+  try { tvPrices = await fetchTradingViewPrices(tvRows); } catch (e) { tvPrices = {}; }
+  for (const row of marketRows) {
+    let saved = false;
+    if (basePrices[row.symbol]) {
+      const quote = basePrices[row.symbol];
+      saved = saveQuotePrice(row, quote.price, quote.change, quote.source);
+    }
+    if (!saved && tvPrices[row.symbol]) {
+      const quote = tvPrices[row.symbol];
+      saved = saveQuotePrice(row, quote.price, quote.change, quote.source || 'tradingview');
+    }
+    if (!saved) {
+      try {
+        const yahoo = await fetchYahooQuote(row);
+        saved = saveQuotePrice(row, yahoo.price, yahoo.change, 'yahoo');
+      } catch (e) {}
+    }
+    if (saved) result.market++; else result.failed++;
+  }
+  result.updated = result.crypto + result.tradfi + result.market;
   result.ok = result.updated > 0;
   result.message = result.ok ? '行情刷新完成' : '行情源暂时不可用';
   return result;
 }
 
-async function fetchCryptoPrices(rows) {
-  const out = {};
-  // 1) Coinbase (US 服务器可访问、免 key)：BTC-USD / ETH-USD / SOL-USD
-  try {
-    const bases = [...new Set(rows.map(r => String(r.symbol || '').split('/')[0]).filter(Boolean))];
-    const results = await Promise.all(bases.map(async (b) => {
-      try {
-        const resp = await fetch('https://api.coinbase.com/v2/prices/' + b + '-USD/spot', { signal: AbortSignal.timeout(8000) });
-        const j = await resp.json();
-        return { base: b, price: j && j.data && Number(j.data.amount) };
-      } catch (e) { return { base: b, price: null }; }
-    }));
-    for (const res of results) { if (res.price) out[res.base] = res.price; }
-    if (Object.keys(out).length >= rows.length) return out;
-  } catch (e) {}
-  // 2) Binance 兜底
-  try {
-    const bn = rows.map(r => String(r.symbol || '').replace(/\//g, ''));
-    const resp = await fetch('https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(bn)), { signal: AbortSignal.timeout(8000) });
-    const j = await resp.json();
-    if (Array.isArray(j)) { for (const item of j) { const sym = String(item.symbol || '').replace('USDT', '/USDT'); if (item.price) out[sym] = Number(item.price); } }
-  } catch (e) {}
-  // 3) CoinGecko 兜底（按 api_id）
-  try {
-    const ids = rows.map(r => r.api_id).filter(Boolean).join(',');
-    if (ids) {
-      const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(ids) + '&vs_currencies=usd', { signal: AbortSignal.timeout(8000) });
-      const j = await resp.json();
-      for (const r of rows) { const p = j[r.api_id] && j[r.api_id].usd; if (p) out[r.symbol] = p; }
-    }
-  } catch (e) {}
-  return out;
-}
-
-// 定时刷新：加密币 60 秒，贵金属和指数 120 秒
+// 服务启动后补做上一结算日；若免费实例休眠错过06:00，可在唤醒后自动补偿
+setTimeout(() => { try { settleDaily(); } catch (e) { console.error('startup settlement error', e.message); } }, 5000);
+// 行情每10秒刷新一次；单次刷新期间跳过下一次，避免并发覆盖
 let marketRefreshRunning = false;
 setInterval(async () => {
   if (marketRefreshRunning) return;
   marketRefreshRunning = true;
   try { await refreshMarketQuotes(); } catch (e) {} finally { marketRefreshRunning = false; }
-}, 60000);
-setTimeout(() => { refreshMarketQuotes().catch(() => {}); }, 15000);
+}, 10000);
+setTimeout(() => { refreshMarketQuotes().catch(() => {}); }, 1000);
 
 // ================= 团队总览（后台）=================
 app.get('/api/admin/team', auth, (req, res) => {

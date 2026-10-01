@@ -685,14 +685,14 @@ async function loadQuotes(root) {
         <div class="panel-head"><h3>交易品种管理</h3><div style="display:flex;gap:8px;"><button class="btn ghost sm" onclick="refreshQuotes()">🔄 刷新实时行情</button><button class="btn sm" onclick="openQuoteModal()">+ 新增品种</button></div></div>
         <div class="panel-body">
           <div class="table-wrap"><table>
-            <thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>分类</th><th>API源ID</th><th>操作</th></tr></thead>
+            <thead><tr><th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>分类</th><th>API源ID</th><th>操作</th></tr></thead>
             <tbody>${qs.map(q => `<tr>
-              <td><b>${esc(q.symbol)}</b></td><td>${esc(q.name)}</td><td>${Number(q.price).toLocaleString('en-US',{maximumFractionDigits:4})}</td>
+              <td><div style="display:flex;align-items:center;gap:8px;"><div style="position:relative;width:28px;height:28px;border-radius:999px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:${esc(q.iconBg || '#e2e8f0')};font-size:9px;font-weight:800;color:#334155;"><span style="position:absolute;">${esc(q.iconText || q.symbol.slice(0,3))}</span>${q.iconUrl ? '<img src="' + esc(q.iconUrl) + '" style="position:relative;z-index:1;width:100%;height:100%;object-fit:contain;padding:1px;" onerror="this.style.display=\'none\'">' : ''}</div><b>${esc(q.symbol)}</b></div></td><td>${esc(q.name)}</td><td>${Number(q.price||0).toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})}</td><td style="color:${Number(q.change_percent)>=0?'var(--green)':'var(--red)'}">${Number(q.change_percent||0).toFixed(4)}%</td>
               <td><span class="pill blue">${esc(q.category)}</span></td><td>${esc(q.api_id || '—')}</td>
               <td><div class="row-actions"><button class="btn xs ghost" onclick="openQuoteModal('${esc(q.symbol)}')">编辑</button><button class="btn xs danger" onclick="delQuote('${esc(q.symbol)}')">删除</button></div></td>
-            </tr>`).join('') || '<tr><td colspan="6" class="empty">暂无品种</td></tr>'}</tbody>
+            </tr>`).join('') || '<tr><td colspan="7" class="empty">暂无品种</td></tr>'}</tbody>
           </table></div>
-          <div style="font-size:12px;color:#64748b;margin-top:10px;">💡 分类为 crypto 且填写了「API源ID」（如 bitcoin/ethereum/solana）的品种会通过 CoinGecko 免费接口每 5 分钟自动刷新真实价格并记录走势。其他品种可在后台手动改价。</div>
+          <div style="font-size:12px;color:#64748b;margin-top:10px;">💡 行情每10秒自动刷新；加密币使用 Binance/CoinGecko/Coinbase，TradFi 使用 DexScreener/Jupiter，贵金属、指数和原油使用 TradingView/Yahoo。价格和涨跌幅统一保留4位小数。</div>
         </div>
       </div>`;
   } catch (e) { root.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
@@ -710,9 +710,9 @@ async function openQuoteModal(symbol) {
         <div class="field"><label>代码（如 BTC/USDT、XAUUSD）</label><input name="symbol" value="${esc(q.symbol)}" ${symbol?'disabled':''}></div>
         <div class="field"><label>名称</label><input name="name" value="${esc(q.name)}"></div>
         <div class="field"><label>最新价</label><input name="price" type="number" step="0.0001" value="${q.price ?? 0}"></div>
-        <div class="field"><label>分类</label><select name="category"><option value="precious" ${q.category==='precious'?'selected':''}>贵金属</option><option value="crypto" ${q.category==='crypto'?'selected':''}>加密货币</option><option value="index" ${q.category==='index'?'selected':''}>指数</option><option value="oil" ${q.category==='oil'?'selected':''}>原油</option><option value="forex" ${q.category==='forex'?'selected':''}>外汇</option></select></div>
-        <div class="field full"><label>API源ID</label><input name="apiId" value="${esc(q.api_id || '')}" placeholder="加密币填 CoinGecko ID；贵金属/指数填 Yahoo 代码，如 GC=F / ^HSI / ^IXIC"></div>
-        <div class="field"><label>API来源</label><select name="apiProvider"><option value="coingecko" ${(q.api_provider||'coingecko')==='coingecko'?'selected':''}>CoinGecko</option><option value="yahoo" ${q.api_provider==='yahoo'?'selected':''}>Yahoo Finance</option><option value="tradingview" ${q.api_provider==='tradingview'?'selected':''}>TradingView</option></select></div>
+        <div class="field"><label>分类</label><select name="category"><option value="precious" ${q.category==='precious'?'selected':''}>贵金属</option><option value="crypto" ${q.category==='crypto'?'selected':''}>加密货币</option><option value="tradfi" ${q.category==='tradfi'?'selected':''}>TradFi股票代币</option><option value="index" ${q.category==='index'?'selected':''}>指数</option><option value="oil" ${q.category==='oil'?'selected':''}>原油</option><option value="forex" ${q.category==='forex'?'selected':''}>外汇</option></select></div>
+        <div class="field full"><label>API源ID</label><input name="apiId" value="${esc(q.api_id || '')}" placeholder="加密币填 CoinGecko ID；贵金属/指数/原油填 Yahoo 或 TradingView 代码；TradFi 填对应的 Solana 代币合约地址"></div>
+        <div class="field"><label>API来源</label><select name="apiProvider"><option value="coingecko" ${(q.api_provider||'coingecko')==='coingecko'?'selected':''}>CoinGecko</option><option value="yahoo" ${q.api_provider==='yahoo'?'selected':''}>Yahoo Finance</option><option value="tradingview" ${q.api_provider==='tradingview'?'selected':''}>TradingView</option><option value="dexscreener" ${q.api_provider==='dexscreener'?'selected':''}>DexScreener</option><option value="jupiter" ${q.api_provider==='jupiter'?'selected':''}>Jupiter</option></select></div>
       </form></div>
       <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">取消</button><button class="btn" onclick="saveQuote('${symbol || ''}')">保存</button></div>
     </div></div>`;

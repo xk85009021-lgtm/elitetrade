@@ -507,6 +507,15 @@ export function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_point_redemptions_user ON point_redemptions(user_id,id DESC);
     CREATE INDEX IF NOT EXISTS idx_point_redemptions_status ON point_redemptions(status,id DESC);
+    CREATE TABLE IF NOT EXISTS point_checkins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      checkin_date TEXT NOT NULL,
+      points INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      UNIQUE(user_id,checkin_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_point_checkins_user ON point_checkins(user_id,checkin_date);
   `);
 
   const addressCount = db.prepare('SELECT COUNT(*) c FROM deposit_addresses').get().c;
@@ -520,6 +529,7 @@ export function initDb() {
     }
   }
     db.prepare(`INSERT INTO app_config (key,value) VALUES ('timezone','Asia/Singapore') ON CONFLICT(key) DO NOTHING`).run();
+  db.prepare(`INSERT INTO app_config (key,value) VALUES ('daily_checkin_points','10') ON CONFLICT(key) DO NOTHING`).run();
   db.prepare(`INSERT INTO app_config (key,value) VALUES ('min_follow_days','7') ON CONFLICT(key) DO NOTHING`).run();
   db.prepare(`INSERT INTO content_settings (key,value,type) VALUES ('app_logo','','image') ON CONFLICT(key) DO NOTHING`).run();
   const legacyName = db.prepare("SELECT value FROM content_settings WHERE key='app_name'").get();
@@ -725,6 +735,18 @@ function ensureMarketInstruments() {
     ['XCUUSD','现货铜','precious','yahoo','HG=F',0],
     ['HSI','恒生指数','index','yahoo','^HSI',0],
     ['NASDAQ','纳斯达克指数','index','yahoo','^IXIC',0],
+    ['UKOIL','布伦特原油','oil','tradingview','TVC:UKOIL',0],
+    ['USOIL','WTI原油','oil','tradingview','TVC:USOIL',0],
+    ['xGOOGL','Alphabet xStock','tradfi','dexscreener','XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN',1],
+    ['xSPCX','SpaceX xStock','tradfi','dexscreener','Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8',2],
+    ['xCRCL','Circle xStock','tradfi','dexscreener','XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1',3],
+    ['xSNDK','Sandisk xStock','tradfi','dexscreener','Xswbpc8UqU6e1j9QZEWCjBMjyvz4twqD7PCy6j2e7jj',4],
+    ['xTSLA','Tesla xStock','tradfi','dexscreener','XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB',5],
+    ['xHOOD','Robinhood xStock','tradfi','dexscreener','XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg',6],
+    ['xAAPL','Apple xStock','tradfi','dexscreener','XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp',7],
+    ['xNVDA','NVIDIA xStock','tradfi','dexscreener','Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh',8],
+    ['xMU','Micron xStock','tradfi','dexscreener','XsQLZycSZ7QnBBdBXQaTbQdiUcbRqjNJgyBGAMzhHav',9],
+    ['xMETA','Meta xStock','tradfi','dexscreener','Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu',10],
     ['BTC/USDT','比特币','crypto','coingecko','bitcoin',1],
     ['ETH/USDT','以太坊','crypto','coingecko','ethereum',2],
     ['USDT/USD','泰达币','crypto','coingecko','tether',3],
@@ -746,6 +768,7 @@ function ensureMarketInstruments() {
       else ins.run(symbol, row[1], row[2], row[4], row[3]);
     }
     db.prepare("UPDATE quotes SET api_provider='coingecko' WHERE category='crypto' AND (api_provider IS NULL OR api_provider='' OR api_provider='yahoo')").run();
+    db.prepare("UPDATE quotes SET api_provider='tradingview' WHERE category='oil' AND (api_provider IS NULL OR api_provider='' OR api_provider='coingecko')").run();
   });
   tx();
 }
