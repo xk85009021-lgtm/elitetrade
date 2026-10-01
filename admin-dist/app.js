@@ -845,8 +845,8 @@ async function loadTeam(root) {
               <td><span class="pill ${(u.userLevel||'V1')==='V1'?'gray':u.userLevel==='V2'?'blue':u.userLevel==='V3'?'indigo':'amber'}">${esc(u.userLevel || 'V1')}</span></td>
               <td>${u.directVerified}</td><td>${Number(u.personalVolume||0).toLocaleString()}</td><td>${Number(u.largeAreaVolume||0).toLocaleString()}</td><td>${Number(u.smallAreaVolume||0).toLocaleString()}</td><td>${Number(u.teamTotalVolume||u.teamVolume||0).toLocaleString()}</td><td>${Number(u.frozenBalance||0).toFixed(2)}</td>
               <td>${statusPill(u.kycStatus)}</td>
-              <td style="font-size:12px;">${(u.direct||[]).map(d => esc(d.name)).join('、') || '—'}</td>
-            </tr>`).join('') || '<tr><td colspan="7" class="empty">暂无用户</td></tr>'}</tbody>
+              <td style="font-size:12px;">${(u.direct||[]).map(d => '<div style="margin-bottom:4px;"><b>'+esc(d.name||'--')+'</b><br><span style="color:#94a3b8;font-size:11px;">UID: '+esc(d.uid||'--')+' · '+esc(d.user_level||'V1')+' · '+(d.kyc_status==='verified'?'已认证':'待认证')+' · 业绩 '+Number(d.personal_volume||0).toLocaleString()+' USDT</span></div>').join('') || '—'}</td>
+            </tr>`).join('') || '<tr><td colspan="10" class="empty">暂无用户</td></tr>'}</tbody>
           </table></div>
         </div>
       </div>

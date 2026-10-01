@@ -225,6 +225,7 @@ function toUser(u) {
     totalAssets: u.total_assets,
     totalIncome: u.total_income,
     pointsBalance: Number(u.points_balance || 0),
+    userLevel: u.user_level || 'V1',
     referrerId: u.referrer_id,
     twofaEnabled: !!u.twofa_enabled,
     emergencyFrozen: !!u.emergency_frozen,
@@ -406,8 +407,9 @@ app.put('/api/transactions/:id/review', auth, (req, res) => {
       return { code: 400, error: '用户可用余额不足，不能通过该提现' };
     }
     const status = action === 'approve' ? 'approved' : 'rejected';
-    db.prepare('UPDATE transactions SET status=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=? AND status=?')
+    const reviewed = db.prepare('UPDATE transactions SET status=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE id=? AND status=?')
       .run(status, req.admin.username, now(), String(remark || ''), t.id, 'pending');
+    if (reviewed.changes !== 1) return { code: 409, error: '该申请已被处理，请刷新后重试' };
     if (action === 'approve') {
       if (t.type === 'deposit') {
         db.prepare('UPDATE users SET balance = balance + ?, total_assets = total_assets + ?, available = available + ? WHERE id = ?').run(t.amount, t.amount, t.amount, user.id);
@@ -447,8 +449,9 @@ app.put('/api/kyc/:id/review', auth, (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(k.user_id);
     if (!user) return { code: 404, error: '用户不存在' };
     const newStatus = action === 'approve' ? 'verified' : 'rejected';
-    db.prepare('UPDATE kyc SET status=?, reviewed_by=?, reviewed_at=? WHERE id=? AND status=?')
+    const reviewed = db.prepare('UPDATE kyc SET status=?, reviewed_by=?, reviewed_at=? WHERE id=? AND status=?')
       .run(newStatus, req.admin.username, now(), k.id, 'pending');
+    if (reviewed.changes !== 1) return { code: 409, error: '该实名申请已被处理，请刷新后重试' };
     db.prepare('UPDATE users SET kyc_status=?, is_verified=? WHERE id=?')
       .run(newStatus === 'verified' ? 'verified' : 'rejected', newStatus === 'verified' ? 1 : 0, k.user_id);
     let inviteInfo = null;
@@ -726,7 +729,8 @@ app.post('/api/public/deposit', userAuth, (req, res) => {
   const depositUid = String(b.depositUid || '').trim();
   const network = String(b.network || 'TRC20').trim();
   const currency = String(b.currency || 'USDT').trim();
-  if (amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
+  if (!Number.isFinite(amount) || amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
+  if (amount > 100000000) return res.status(400).json({ error: '充值金额超出允许范围' });
   if (!depositUid) return res.status(400).json({ error: '请输入充值 UID' });
   if (depositUid !== String(req.user.uid)) return res.status(403).json({ error: '充值 UID 与当前登录账号不一致' });
   const addressRow = db.prepare("SELECT * FROM deposit_addresses WHERE network=? AND currency=? AND address=? AND status='active'").get(network, currency, String(b.address || '').trim());
@@ -753,8 +757,9 @@ app.post('/api/public/withdraw', userAuth, (req, res) => {
   const b = req.body || {};
   const amount = Number(b.amount || 0);
   const user = req.user;
-  if (amount < 10) return res.status(400).json({ error: '最低提现金额为 10 USDT' });
-  if (amount > Number(user.available || 0)) return res.status(400).json({ error: '提现金额超过可用余额' });
+  if (!Number.isFinite(amount) || amount < 10) return res.status(400).json({ error: '最低提现金额为 10 USDT' });
+  const pendingWithdraw = Number(db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE user_id=? AND type='withdraw' AND status='pending'").get(user.id).s || 0);
+  if (amount > Number(user.available || 0) || pendingWithdraw + amount > Number(user.available || 0)) return res.status(400).json({ error: '提现金额超过可用余额（含待审核提现）' });
   if (!String(b.address || '').trim()) return res.status(400).json({ error: '请填写提现地址' });
   const earliestFollow = db.prepare("SELECT MIN(created_at) m FROM follows WHERE user_id=? AND status='active'").get(user.id);
   if (earliestFollow && earliestFollow.m) {
@@ -876,12 +881,28 @@ app.get('/api/public/referral', userAuth, (req, res) => {
   const promotionRewards = db.prepare('SELECT * FROM promotion_rewards WHERE member_id=? ORDER BY id DESC LIMIT 100').all(user.id);
   const upgradeBonuses = db.prepare('SELECT * FROM upgrade_bonuses WHERE member_id=? ORDER BY id DESC LIMIT 20').all(user.id);
   const totalReward = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards WHERE member_id=?').get(user.id).s;
+  const validDirectSet = new Set(metrics.directValidIds.map((id) => Number(id)));
+  const directMembers = db.prepare(`SELECT id,uid,name,phone,email,kyc_status,status,user_level,created_at FROM users WHERE referrer_id=? ORDER BY id DESC`).all(user.id).map((member) => ({
+    id: member.id,
+    uid: member.uid,
+    name: member.name || '--',
+    phone: member.phone || '',
+    email: member.email || '',
+    kycStatus: member.kyc_status || 'unverified',
+    status: member.status || 'active',
+    userLevel: member.user_level || 'V1',
+    personalVolume: activePrincipalOf([member.id]),
+    branchVolume: activePrincipalOf([member.id, ...getDescendants(member.id)]),
+    isValid: validDirectSet.has(Number(member.id)),
+    createdAt: member.created_at,
+  }));
   res.json({
     code: user.referral_code,
     userLevel: metrics.level,
     levelRule: getLevelRule(metrics.level, configs),
     directVerified: metrics.directVerified,
     directCount: metrics.directCount,
+    directMembers,
     teamSize: metrics.desc.length,
     personalVolume: metrics.personalVolume,
     teamVolume: metrics.teamTotalVolume,
@@ -1361,18 +1382,19 @@ function reconcileAgentLevel(user, metrics, bizDate) {
 
 function payDueUpgradeBonuses() {
   const rows = db.prepare(`
-    SELECT b.*, u.user_level, u.status, u.emergency_frozen, u.level_since
+    SELECT b.*, u.user_level, u.status AS user_status, u.emergency_frozen, u.level_since
     FROM upgrade_bonuses b JOIN users u ON u.id=b.member_id
     WHERE b.status='pending' AND b.hold_until<=?
   `).all(new Date().toISOString());
   for (const bonus of rows) {
-    if (bonus.user_level !== bonus.to_level || bonus.status !== 'active' || bonus.emergency_frozen) continue;
+    if (bonus.user_level !== bonus.to_level || bonus.user_status !== 'active' || bonus.emergency_frozen) continue;
     const levelSince = new Date(bonus.level_since || 0).getTime();
     if (!levelSince || levelSince > new Date(bonus.hold_until).getTime()) continue;
     const tx = db.transaction(() => {
       const fresh = db.prepare("SELECT * FROM upgrade_bonuses WHERE id=? AND status='pending'").get(bonus.id);
       if (!fresh) return;
-      db.prepare('UPDATE upgrade_bonuses SET status=?, paid_at=? WHERE id=?').run('paid', new Date().toISOString(), bonus.id);
+      const paid = db.prepare("UPDATE upgrade_bonuses SET status='paid', paid_at=? WHERE id=? AND status='pending'").run(new Date().toISOString(), bonus.id);
+      if (paid.changes !== 1) return;
       addAvailable(bonus.member_id, Number(bonus.amount));
       addNotification(bonus.member_id, '晋级奖励已发放', bonus.to_level + ' 晋级奖励 ' + Number(bonus.amount).toFixed(2) + ' USDT 已到账。', 'upgrade');
     });
@@ -2150,7 +2172,7 @@ app.get('/api/admin/team', auth, (req, res) => {
   const out = [];
   for (const u of users) {
     const m = computeMetrics(u.id);
-    const direct = db.prepare('SELECT uid, name, kyc_status, user_level FROM users WHERE referrer_id = ?').all(u.id);
+    const direct = db.prepare(`SELECT u.uid, u.name, u.kyc_status, u.user_level, u.status, u.created_at, COALESCE((SELECT SUM(f.allocated) FROM follows f WHERE f.user_id=u.id AND f.status='active'),0) AS personal_volume FROM users u WHERE u.referrer_id=? ORDER BY u.id DESC`).all(u.id);
     out.push({ uid: u.uid, name: u.name, userLevel: u.user_level || 'V1', calcLevel: m.level, directVerified: m.directVerified, personalVolume: m.personalVolume, largeAreaVolume: m.largestBranchVolume, smallAreaVolume: m.smallAreaVolume, teamVolume: m.teamTotalVolume, teamTotalVolume: m.teamTotalVolume, frozenBalance: u.frozen_balance || 0, kycStatus: u.kyc_status, direct });
   }
   res.json(out);

@@ -89,6 +89,16 @@ npm run reset-data
 
 该命令会删除用户、房间、项目、充值提现、实名、跟单、收益、通知、客服、审计和演示行情，只保留管理员、系统配置和内容配置。
 
+## 自动化审计
+
+可在独立测试数据库上执行完整业务链路审计：
+
+```bash
+E2E_BASE=http://localhost:8092 node scripts/e2e-audit.cjs
+```
+
+覆盖邀请注册、KYC 幂等审核、充值审核、跟单、团队直推数据、每日收益、积分、7天退出限制和提现余额占用。
+
 ## Render 部署
 
 当前 GitHub 仓库已绑定 Render 服务。每次推送后可通过 Render 后台的 Manual Deploy 部署最新提交。
