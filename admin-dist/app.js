@@ -576,7 +576,7 @@ async function loadContent(root) {
     const g = (k) => items.find(i => i.key === k) || { key: k, value: '' };
     root.innerHTML = `
       <div class="panel">
-        <div class="panel-head"><h3>前端页面内容管理</h3><button class="btn sm" onclick="saveContent()">保存全部修改</button></div>
+        <div class="panel-head"><h3>前端页面内容管理</h3><div style="display:flex;gap:8px;"><a class="btn sm ghost" href="/admin/content-center.html" target="_blank">打开前端内容中心</a><button class="btn sm" onclick="saveContent()">保存全部修改</button></div></div>
         <div class="panel-body">
           <h4 style="margin-bottom:12px;">🏠 首页</h4>
           <div class="form-grid">

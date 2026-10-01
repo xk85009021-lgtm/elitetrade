@@ -157,6 +157,50 @@ function parseArr(s) {
   try { return typeof s === 'string' ? JSON.parse(s) : (s || []); } catch { return []; }
 }
 
+function contentValue(key, fallback = '') {
+  const row = db.prepare('SELECT value FROM content_settings WHERE key=?').get(key);
+  return row && row.value !== undefined && row.value !== null ? String(row.value) : fallback;
+}
+
+function contentJson(key, fallback) {
+  try {
+    const raw = contentValue(key, '');
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function siteParams() {
+  return {
+    minDeposit: 10,
+    minWithdraw: 10,
+    minFollowDays: MIN_FOLLOW_DAYS,
+    dailySettleHour: 6,
+    pointsBaseAmount: 500,
+    pointsPerBase: 10,
+    defaultLanguage: 'zh-CN',
+    contactEmail: '',
+    contactTelegram: '',
+    contactWhatsapp: '',
+    ...contentJson('site_params_json', {}),
+  };
+}
+
+function featureFlags() {
+  return {
+    showCrowdfunding: false,
+    showMall: true,
+    showLeadTrader: true,
+    showInvite: true,
+    showQuotes: true,
+    showCheckin: true,
+    ...contentJson('feature_flags_json', {}),
+  };
+}
+
 function quoteVisual(symbol, category) {
   const key = String(symbol || '').toUpperCase();
   const cryptoColors = { BTC:'#F7931A', ETH:'#627EEA', USDT:'#26A17B', BNB:'#F3BA2F', SOL:'#14B8A6', USDC:'#2775CA', XRP:'#23292F', DOGE:'#C2A633', ADA:'#2563EB', TRX:'#EF0027' };
@@ -588,6 +632,61 @@ app.put('/api/admin/point-redemptions/:id/review', auth, (req, res) => {
   res.json(out);
 });
 
+// ---------- 前端内容中心 ----------
+app.get('/api/admin/ui-text-catalog', auth, (req, res) => {
+  try {
+    const file = path.join(ROOT, 'server', 'ui-text-catalog.json');
+    res.json(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (e) {
+    res.status(500).json({ error: '前端文案目录读取失败' });
+  }
+});
+
+app.get('/api/admin/frontend-config', auth, (req, res) => {
+  res.json({
+    texts: {
+      'zh-CN': contentJson('ui_text_zh_cn', {}),
+      en: contentJson('ui_text_en', {}),
+      'zh-TW': contentJson('ui_text_zh_tw', {}),
+    },
+    params: siteParams(),
+    flags: featureFlags(),
+    staticTeam: contentJson('static_team_json', []),
+    branding: {
+      app_name: contentValue('app_name', '盈透copy'),
+      app_logo: contentValue('app_logo', ''),
+      app_slogan: contentValue('app_slogan', ''),
+      home_banner_title: contentValue('home_banner_title', ''),
+      home_banner_subtitle: contentValue('home_banner_subtitle', ''),
+      home_banner_image: contentValue('home_banner_image', ''),
+      customer_service: contentValue('customer_service', ''),
+    },
+  });
+});
+
+app.put('/api/admin/frontend-config', auth, (req, res) => {
+  const b = req.body || {};
+  const save = db.prepare("INSERT INTO content_settings (key,value,type,updated_by,updated_at) VALUES (?,?,?,?,datetime('now','localtime')) ON CONFLICT(key) DO UPDATE SET value=excluded.value,type=excluded.type,updated_by=excluded.updated_by,updated_at=datetime('now','localtime')");
+  const tx = db.transaction(() => {
+    if (b.texts && typeof b.texts === 'object') {
+      save.run('ui_text_zh_cn', JSON.stringify(b.texts['zh-CN'] || {}), 'json', req.admin.username);
+      save.run('ui_text_en', JSON.stringify(b.texts.en || {}), 'json', req.admin.username);
+      save.run('ui_text_zh_tw', JSON.stringify(b.texts['zh-TW'] || {}), 'json', req.admin.username);
+    }
+    if (b.params && typeof b.params === 'object') save.run('site_params_json', JSON.stringify(b.params), 'json', req.admin.username);
+    if (b.flags && typeof b.flags === 'object') save.run('feature_flags_json', JSON.stringify(b.flags), 'json', req.admin.username);
+    if (Array.isArray(b.staticTeam)) save.run('static_team_json', JSON.stringify(b.staticTeam), 'json', req.admin.username);
+    if (b.branding && typeof b.branding === 'object') {
+      for (const key of ['app_name','app_logo','app_slogan','home_banner_title','home_banner_subtitle','home_banner_image','customer_service']) {
+        if (b.branding[key] !== undefined) save.run(key, String(b.branding[key] ?? ''), key.includes('logo') || key.includes('image') ? 'image' : 'text', req.admin.username);
+      }
+    }
+    addAudit('admin', req.admin.username, 'UPDATE_FRONTEND_CONFIG', 'content_settings', 'frontend', { keys:Object.keys(b) });
+  });
+  tx();
+  res.json({ ok: true });
+});
+
 // ---------- content (前端页面内容) ----------
 app.get('/api/content', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM content_settings ORDER BY key').all());
@@ -729,7 +828,8 @@ app.post('/api/public/deposit', userAuth, (req, res) => {
   const depositUid = String(b.depositUid || '').trim();
   const network = String(b.network || 'TRC20').trim();
   const currency = String(b.currency || 'USDT').trim();
-  if (!Number.isFinite(amount) || amount < 10) return res.status(400).json({ error: '最低充值金额为 10 USDT' });
+  const params = siteParams();
+  if (!Number.isFinite(amount) || amount < params.minDeposit) return res.status(400).json({ error: '最低充值金额为 ' + params.minDeposit + ' USDT' });
   if (amount > 100000000) return res.status(400).json({ error: '充值金额超出允许范围' });
   if (!depositUid) return res.status(400).json({ error: '请输入充值 UID' });
   if (depositUid !== String(req.user.uid)) return res.status(403).json({ error: '充值 UID 与当前登录账号不一致' });
@@ -757,18 +857,19 @@ app.post('/api/public/withdraw', userAuth, (req, res) => {
   const b = req.body || {};
   const amount = Number(b.amount || 0);
   const user = req.user;
-  if (!Number.isFinite(amount) || amount < 10) return res.status(400).json({ error: '最低提现金额为 10 USDT' });
+  const params = siteParams();
+  if (!Number.isFinite(amount) || amount < params.minWithdraw) return res.status(400).json({ error: '最低提现金额为 ' + params.minWithdraw + ' USDT' });
   const pendingWithdraw = Number(db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE user_id=? AND type='withdraw' AND status='pending'").get(user.id).s || 0);
   if (amount > Number(user.available || 0) || pendingWithdraw + amount > Number(user.available || 0)) return res.status(400).json({ error: '提现金额超过可用余额（含待审核提现）' });
   if (!String(b.address || '').trim()) return res.status(400).json({ error: '请填写提现地址' });
   const earliestFollow = db.prepare("SELECT MIN(created_at) m FROM follows WHERE user_id=? AND status='active'").get(user.id);
   if (earliestFollow && earliestFollow.m) {
     const ageDays = (Date.now() - new Date(normalizeSqlDate(earliestFollow.m)).getTime()) / 86400000;
-    if (ageDays < MIN_FOLLOW_DAYS) {
+    if (ageDays < siteParams().minFollowDays) {
       const totalPrincipal = db.prepare("SELECT COALESCE(SUM(allocated),0) s FROM follows WHERE user_id=? AND status='active'").get(user.id).s;
       const totalWithdrawn = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE user_id=? AND type='withdraw' AND status='approved'").get(user.id).s;
       if (totalWithdrawn + amount > totalPrincipal) {
-        return res.status(400).json({ error: '跟单未满 ' + MIN_FOLLOW_DAYS + ' 天：仅可累计提现跟单本金，收益到期后开放' });
+        return res.status(400).json({ error: '跟单未满 ' + siteParams().minFollowDays + ' 天：仅可累计提现跟单本金，收益到期后开放' });
       }
     }
   }
@@ -802,7 +903,7 @@ app.post('/api/public/follow', userAuth, (req, res) => {
   const stopLoss = Math.max(0, Math.min(99, Number(b.stopLoss) || 0));
   if (allocated <= 0) return res.status(400).json({ error: '跟单金额无效' });
   if (allocated > Number(user.available || 0)) return res.status(400).json({ error: '可用资金不足' });
-  const lockUntil = new Date(Date.now() + MIN_FOLLOW_DAYS * 86400000).toISOString();
+  const lockUntil = new Date(Date.now() + siteParams().minFollowDays * 86400000).toISOString();
   const tx = db.transaction(() => {
     const fresh = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
     if (allocated > Number(fresh.available || 0)) throw new Error('可用资金不足');
@@ -812,10 +913,10 @@ app.post('/api/public/follow', userAuth, (req, res) => {
       .run(user.uid, user.id, room.id, room.name, room.avatar, allocated, 'active', stopLoss, allocated, lockUntil, now());
     unlockInviteRewards(user);
     refreshUserLevel(user.id);
-    addNotification(user.id, '跟单已开启', '已跟随 ' + room.name + '，投入 ' + allocated.toFixed(2) + ' USDT，最低跟单周期 ' + MIN_FOLLOW_DAYS + ' 天。', 'follow');
+    addNotification(user.id, '跟单已开启', '已跟随 ' + room.name + '，投入 ' + allocated.toFixed(2) + ' USDT，最低跟单周期 ' + siteParams().minFollowDays + ' 天。', 'follow');
   });
   try { tx(); } catch (e) { return res.status(400).json({ error: e.message }); }
-  res.json({ ok: true, lockUntil, minDays: MIN_FOLLOW_DAYS });
+  res.json({ ok: true, lockUntil, minDays: siteParams().minFollowDays });
 });
 
 app.get('/api/public/follows', userAuth, (req, res) => {
@@ -843,7 +944,7 @@ app.put('/api/public/follows/:id/stop', userAuth, (req, res) => {
   if (f.status === 'ended') return res.status(400).json({ error: '该跟单已结束' });
   const unlockMs = new Date(normalizeSqlDate(f.lock_until || f.created_at)).getTime();
   if (Date.now() < unlockMs) {
-    return res.status(423).json({ error: '进入跟单房间后最低 ' + MIN_FOLLOW_DAYS + ' 天才能退出，剩余 ' + Math.max(1, Math.ceil((unlockMs - Date.now()) / 86400000)) + ' 天' });
+    return res.status(423).json({ error: '进入跟单房间后最低 ' + siteParams().minFollowDays + ' 天才能退出，剩余 ' + Math.max(1, Math.ceil((unlockMs - Date.now()) / 86400000)) + ' 天' });
   }
   const tx = db.transaction(() => {
     const fresh = db.prepare('SELECT * FROM follows WHERE id=?').get(f.id);
@@ -945,7 +1046,7 @@ app.get('/api/public/overview', userAuth, (req, res) => {
   const myInvest = investments.reduce((sum, i) => sum + Number(i.amount || 0), 0);
   const commission = db.prepare('SELECT COALESCE(SUM(amount),0) s FROM promotion_rewards WHERE member_id=?').get(user.id).s;
   const todayProfit = db.prepare('SELECT COALESCE(SUM(customer_share),0) s FROM yield_records WHERE uid=? AND settle_date=?').get(user.uid, businessDate()).s;
-  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, pointsBalance: Number(user.points_balance || 0), userLevel: user.user_level || 'V1', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: MIN_FOLLOW_DAYS } });
+  res.json({ user: toUser(user), stats: { totalAssets: user.total_assets, balance: user.balance, frozenBalance: user.frozen_balance || 0, pointsBalance: Number(user.points_balance || 0), userLevel: user.user_level || 'V1', available: user.available, totalIncome: user.total_income, myCopyAlloc, myCopyPnl: Number(myCopyPnl.toFixed(4)), myInvest, commission, todayProfit, minFollowDays: siteParams().minFollowDays } });
 });
 
 app.post('/api/public/invest', userAuth, (req, res) => {
@@ -1542,7 +1643,8 @@ function settleFollowPoints(bizDate) {
     const getBalance = db.prepare('SELECT points_balance FROM users WHERE id=?');
     const insertLedger = db.prepare('INSERT INTO points_transactions (user_id,amount,balance_after,type,reference_type,reference_id,description) VALUES (?,?,?,?,?,?,?)');
     for (const follow of follows) {
-      const points = Math.floor(Number(follow.allocated || 0) / 500) * 10;
+      const params = siteParams();
+      const points = Math.floor(Number(follow.allocated || 0) / Number(params.pointsBaseAmount || 500)) * Number(params.pointsPerBase || 10);
       if (points <= 0) continue;
       const info = insertAccrual.run(follow.user_id, follow.id, bizDate, Number(follow.allocated || 0), points);
       if (!info.changes) continue;
@@ -1650,7 +1752,8 @@ function settleAgentPromotion(profitByUid, bizDate) {
 // 定时结算：按新加坡时区每天 06:00 执行一次
 setInterval(() => {
   const p = timeZoneParts();
-  if (p.hour === 6 && p.minute < 10) {
+  const params = siteParams();
+  if (p.hour === Number(params.dailySettleHour ?? 6) && p.minute < 10) {
     try { settleDaily(); } catch (e) { console.error('settle error', e.message); }
   }
 }, 60000);

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>盈透copy - 前端内容中心</title>
+<link rel="stylesheet" href="style.css?v=20261001c">
+<style>
+.cc-body{padding:22px 24px 60px}.cc-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.cc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.cc-tab{border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 14px;font-weight:700;color:#475569}.cc-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}.cc-panel{display:none}.cc-panel.active{display:block}.cc-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px}.cc-toolbar input{flex:1;max-width:420px;padding:10px 12px;border:1px solid var(--line);border-radius:9px}.cc-group{margin-bottom:14px}.cc-group>h4{position:sticky;top:58px;z-index:2;background:#f1f5f9;padding:8px 0;color:#334155}.cc-row{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px}.cc-source{font-size:12px;color:#64748b;margin-bottom:8px;word-break:break-all}.cc-langs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.cc-langs input,.cc-param input,.cc-team input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px}.cc-team-row{display:grid;grid-template-columns:1fr 1fr 1fr 1.3fr 1fr 1.2fr 60px;gap:8px;margin-bottom:8px}.cc-flags{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.cc-flag{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;gap:8px;align-items:center}.cc-upload{display:flex;gap:8px;align-items:center}.cc-upload input[type=text]{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px}@media(max-width:800px){.cc-langs,.cc-flags{grid-template-columns:1fr}.cc-team-row{grid-template-columns:1fr}.cc-body{padding:14px}}
+</style>
+</head>
+<body>
+<div class="cc-body">
+  <div class="cc-head">
+    <div><h1 style="font-size:22px;font-weight:800;">前端内容中心</h1><p style="color:#64748b;font-size:13px;margin-top:5px;">界面文案、业务参数、功能开关、静态团队与品牌图片均可在此统一修改。</p></div>
+    <div style="display:flex;gap:8px;"><a class="btn ghost" href="/admin/">返回后台</a><button class="btn" id="saveBtn">保存全部</button></div>
+  </div>
+  <div class="cc-tabs">
+    <button class="cc-tab active" data-tab="texts">界面文案</button>
+    <button class="cc-tab" data-tab="params">业务参数</button>
+    <button class="cc-tab" data-tab="flags">功能开关</button>
+    <button class="cc-tab" data-tab="team">静态团队</button>
+    <button class="cc-tab" data-tab="branding">品牌与图片</button>
+  </div>
+  <div id="message" style="margin-bottom:12px;"></div>
+  <section class="cc-panel active" data-panel="texts">
+    <div class="cc-toolbar"><input id="textSearch" placeholder="搜索页面、文件或文案"><span id="textCount" style="font-size:12px;color:#64748b;"></span></div>
+    <div id="textsBox"></div>
+  </section>
+  <section class="cc-panel" data-panel="params"><div class="panel"><div class="panel-head"><h3>业务参数</h3></div><div class="panel-body"><div id="paramsBox"></div></div></div></section>
+  <section class="cc-panel" data-panel="flags"><div class="panel"><div class="panel-head"><h3>前端功能开关</h3></div><div class="panel-body"><div class="cc-flags" id="flagsBox"></div></div></div></section>
+  <section class="cc-panel" data-panel="team"><div class="panel"><div class="panel-head"><h3>静态团队展示</h3><button class="btn sm" id="addTeamBtn">新增成员</button></div><div class="panel-body"><div class="cc-team-row" style="font-size:12px;color:#64748b;"><div>姓名</div><div>角色/等级</div><div>业绩</div><div>头像URL</div><div>标签</div><div>备注</div><div>操作</div></div><div id="teamBox"></div></div></div></section>
+  <section class="cc-panel" data-panel="branding"><div class="panel"><div class="panel-head"><h3>品牌与图片</h3></div><div class="panel-body"><div id="brandingBox"></div></div></div></section>
+</div>
+<div id="toasts"></div>
+<script src="content-center.js?v=20261001c"></script>
+</body>
+</html>

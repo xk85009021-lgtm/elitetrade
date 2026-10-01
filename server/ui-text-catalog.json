@@ -1,0 +1,2987 @@
+[
+  {
+    "category": "BottomNav.tsx",
+    "file": "BottomNav.tsx",
+    "source": "跟单"
+  },
+  {
+    "category": "BottomNav.tsx",
+    "file": "BottomNav.tsx",
+    "source": "商城"
+  },
+  {
+    "category": "BottomNav.tsx",
+    "file": "BottomNav.tsx",
+    "source": "首页"
+  },
+  {
+    "category": "BottomNav.tsx",
+    "file": "BottomNav.tsx",
+    "source": "我的"
+  },
+  {
+    "category": "BrandBanner.tsx",
+    "file": "BrandBanner.tsx",
+    "source": "盈透copy"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "📅 日化"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "风格筛选:"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "高频"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "跟单"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "跟单量化"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "更多筛选"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "机构"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "机构级"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "绩效费"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "量化"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "全部"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "收益/分润"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "收益率"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "搜索交易员、策略或标签..."
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "稳健"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "稳健型"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "我的带单"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "我的跟单"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "运行天数"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "运行天数 (长到短)"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "专业"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "总利润 (高到低)"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "总利润 (USD)"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "总收益率 (高到低)"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "最大回撤"
+  },
+  {
+    "category": "CopyTrading",
+    "file": "CopyTradingView.tsx",
+    "source": "最大回撤 (低到高)"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "💬 进入股东群（融资已满 100%）"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "餐饮消费"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "感谢关注！实体众筹项目需线下洽谈，请到公司进行申请对接，或联系在线客服预约。"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "个上线项目"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "共"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "共同投资经过严格审查的高收益实体企业。利用机构级的碎片化所有权。"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "精选项目"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "立即参与"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "绿色科技"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "目标金额"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "全部项目"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "融资进度"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "实体众筹"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "团队 :"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "退出路径 :"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "新能源"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "盈透copy"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "预估收益"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "智能硬件"
+  },
+  {
+    "category": "Crowdfunding",
+    "file": "CrowdfundingView.tsx",
+    "source": "最低投资"
+  },
+  {
+    "category": "DailyNoticePopup.tsx",
+    "file": "DailyNoticePopup.tsx",
+    "source": "平台通知"
+  },
+  {
+    "category": "DailyNoticePopup.tsx",
+    "file": "DailyNoticePopup.tsx",
+    "source": "我知道了"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "本次充值地址 ("
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "查看审核状态，待审核充值订单可取消"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值 UID"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值订单"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值金额"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值申请提交失败"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值申请已提交"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值申请已提交，等待后台审核"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值提交后进入人工审核，审核通过后余额到账。"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "充值提现订单明细"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "当前网络没有可用充值地址"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "当前网络暂未配置充值地址"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "订单已取消，已重新随机分配充值地址"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "加载中..."
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "金额"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "请认真核对充值 UID、金额、币种和网络。"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "请输入 UID"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "请输入充值 UID"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "取消订单，重新下单"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "取消订单失败"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "审核拒绝"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "审核通过"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "审核中"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "收款二维码"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "提现订单"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "我已完成充值"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "系统会根据币种和网络随机分配一个钱包地址及对应二维码。"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "系统已从该网络的启用地址中随机分配，客户不能自行更换"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "选择币种"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "选择网络"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "已超时"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "已取消"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "暂无订单"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "正在随机分配充值地址..."
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "正在提交..."
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "重要提示"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "最低 10 USDT"
+  },
+  {
+    "category": "Deposit",
+    "file": "DepositView.tsx",
+    "source": "最低充值金额为 10 USDT"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "财务记录 (Financial Records)"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "充值"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "处理中"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "导出 CSV"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "近30日净盈亏 (30D PnL)"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "近30天 (Last 30 Days)"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "全部"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "收益"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "提现"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "已完成"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "盈透copy_Transactions.csv"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "佣金"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "暂无相关分类记录"
+  },
+  {
+    "category": "FinancialRecords",
+    "file": "FinancialRecordsView.tsx",
+    "source": "账户总资产 (Total Balance)"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "6 位验证码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "安全验证"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "绑定账号"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "获取验证码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "两次输入的密码不一致"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "密码重置成功"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "密码重置失败"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "前往登录"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "请输入绑定手机号"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "请输入绑定邮箱"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "请输入绑定账号"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "确认新密码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "确认重置密码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "手机号"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "所有旧登录会话已下线，请使用新密码重新登录。"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "新密码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "验证码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "验证码发送失败"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "验证码已发送，10 分钟内有效"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "验证码由邮件或短信服务真实发送"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "邮箱"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "再次输入新密码"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "正在处理..."
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "至少8位"
+  },
+  {
+    "category": "ForgotPassword",
+    "file": "ForgotPasswordView.tsx",
+    "source": "重置登录密码"
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "该项目尚未满额，暂未生成股东群"
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "股东群"
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "股东群已自动创建，欢迎各位投资人"
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "全体投资人沟通协调群 · 融资已满 100%"
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "输入消息..."
+  },
+  {
+    "category": "GroupChat.tsx",
+    "file": "GroupChat.tsx",
+    "source": "暂无消息，来打个招呼吧"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "10秒实时刷新 · 查看全部行情"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "跟单策略"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "跟单量化"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "跟单人数"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "更多"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "贵金属"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "积分商城"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "加密货币"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "今日收益"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "快捷充值"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "快捷提现"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "累计利润"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "累计收益率"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "热门"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "热门跟单专区"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "通知中心"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "我要带单"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "邀请好友"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "原油"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "在线客服"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "暂无上架跟单房间"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "指数"
+  },
+  {
+    "category": "Home",
+    "file": "HomeView.tsx",
+    "source": "总资产 (USD)"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "，注册链接："
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "· 晋级奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "+ 培育"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "1. 小区业绩 = 团队总业绩减去最大单分支业绩，用于鼓励多分支发展。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "2. 成功邀请并完成实名认证后，邀请奖励进入冻结钱包；被邀请人首次跟单后解冻。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "3. 推广关系绑定后不可修改，严禁刷号、马甲账户和异常批量注册。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "保持等级满30天发放"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "保存海报"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "大区业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "大区业绩明细"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "待入金"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "当前等级"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "分支"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "分支业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "复制"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "复制链接"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "个人业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "构建财富网络 · 最高返佣 30%"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "构建您的财富网络"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "关闭"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "规则说明"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "好友通过链接或邀请码注册后自动绑定关系"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "级差奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "加入盈透copy，一起构建跟单团队。邀请码："
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "加载中"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "晋级奖励记录"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "立即分享"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "名"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "名 V4"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "您已达到最高代理等级，继续维护团队可获得更高团队奖励。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "培育 V4 代理"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "平级奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "人"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "人 + 小区业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "扫码注册 · 共建团队"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "升级进度"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "升级同时考核直推人数与小区业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "生成邀请海报"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "手数奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "团队总业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "推广奖励"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "推荐关系永久绑定，团队成员跟单后，可按代理等级获得直推提成与团队奖励。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "我的专属邀请码"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "小区手数奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "小区手数奖按当前小区有效业绩计算：2000 USDT = 1标准手，按0.5手向下取整；不足2000 USDT不发放。例：4000=2手、3000=1.5手、2800=1手。级差按上下级手数单价差额无限代结算；连续2个月不达标自动降级。"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "小区业绩"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请海报"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请好友"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请好友，共享团队成长"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请码："
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请人："
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "邀请文案已复制"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "已达最高等级"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "已发放"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "已复制"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "已失效"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "盈透copy"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "盈透copy 用户"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "盈透copy 专属邀请"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "盈透copy-邀请海报.png"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "有效用户"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "暂无直推用户，分享邀请链接后即可建立推荐关系"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推奖励 · 团队奖励 · 静态跟单收益"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推人数"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推提成"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推用户"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推有效"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "直推有效用户"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "注册即开通，完成实名与真实入金后计为有效用户"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "专属邀请"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "综合进度"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "最高可享受返佣"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "最近奖励记录"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "U/手"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "USDT/手 · 平级奖"
+  },
+  {
+    "category": "InviteFriends",
+    "file": "InviteFriendsView.tsx",
+    "source": "V1-V5 代理等级与奖励"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "✓ 已认证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "更换国徽面"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "更换手持照"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "更换正面"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "国徽面照片"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "国际护照 (Passport)"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "护照"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "机动车驾驶证 (Driver's License)"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "基础信息"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "驾照"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "居民身份证 (Mainland China)"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "请填写证件号码"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "请填写证件上的真实姓名"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "请完整填写基础信息"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "人像面照片"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "认证已通过并更新"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "上传手持证件与签名照"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "上传证件反面"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "上传证件正面"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "身份验证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "身份证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "实名认证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "手持证件正面及写有“盈透copy + 当天日期”的纸条"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "提交认证审核"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "为保障资金安全，请完成实名认证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "未认证"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "真实姓名"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "证件号码"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "证件类型"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "证件上传失败"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "证件影像上传"
+  },
+  {
+    "category": "Kyc",
+    "file": "KycView.tsx",
+    "source": "智能 OCR 校验中..."
+  },
+  {
+    "category": "LanguageSwitcher.tsx",
+    "file": "LanguageSwitcher.tsx",
+    "source": "切换语言"
+  },
+  {
+    "category": "LanguageSwitcher.tsx",
+    "file": "LanguageSwitcher.tsx",
+    "source": "切換語言"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "策略说明、交易品种与风控方案"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "带单房间"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "带单申请已提交，请等待后台审核。"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "个"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "交易经验、年限与业绩"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "交易员累计绩效费"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "交易员认证"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "联系方式"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "人跟单 · 绩效费"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "认证已通过，等待运营配置房间归属。"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "上次申请未通过，可修改资料后重新提交。"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "申请审核中："
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "申请状态"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "审核通过后，运营后台可为交易员创建或分配跟单房间。"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "审核中"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "提交带单申请"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "提交失败"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "未申请"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "未通过"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "我的带单"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "我的房间"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "已提交资料"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "已通过"
+  },
+  {
+    "category": "LeadTrader",
+    "file": "LeadTraderView.tsx",
+    "source": "正在加载..."
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "登录密码"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "登录失败：账号或密码错误"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "谷歌验证器动态验证码"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "还没有账号？"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "欢迎登录 盈透copy"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "记住登录状态"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "立即登录"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "立即注册"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "请输入 6 位动态验证码"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "请输入登录密码"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "请输入谷歌验证器中的 6 位动态验证码"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "请输入手机号或邮箱"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "身份安全验证中..."
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "手机号 / 电子邮箱"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "忘记密码？"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "重置密码验证链接已发送至安全邮箱。"
+  },
+  {
+    "category": "Login",
+    "file": "LoginView.tsx",
+    "source": "专业量化跟单与积分商城平台"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "当前可用积分"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换记录"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换申请已提交，后台确认后将安排配送"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换失败"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换数量"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "兑换与积分记录"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "高端商品"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "跟单金额每满 500 USDT，每日获得 10 积分；多笔跟单积分可叠加。"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "后台审核状态实时同步"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "黄金白银"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分 ·"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分 · 库存"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分/件"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分商城"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "积分余额不足"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "今日已签到"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "联系电话 / 微信号"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "领取中..."
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "每个账户每天限领一次，签到积分直接到账"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "每日签到"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "苹果"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "汽车"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "签到 +"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "签到成功，获得"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "签到失败"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "请填写收货地址和联系方式"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "全部"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "确认兑换"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "收货地址"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "所需积分"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "提交中..."
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "盈透尊享会员积分"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "暂无积分记录"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "暂无上架商品"
+  },
+  {
+    "category": "Mall",
+    "file": "MallView.tsx",
+    "source": "珠宝首饰"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "，本金与收益可随时提现。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "，您仅可累计提现跟单本金；"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "% • 收益率 +"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "% 时，系统将自动平仓并停止跟单。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "📋 线上跟单协议"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "7 天后"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "7 天内"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "当该策略总浮亏达到"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "发送失败"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "返回修改"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "风险告知书："
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "跟单本金 (USD)"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "跟单交易存在本金损失风险，历史收益不代表未来表现。您应充分了解量化跟单策略的风险特征，并根据自身风险承受能力谨慎决策。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "跟单配置 •"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "跟单失败，可用资金不足"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "跟单手数比例"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "工单会同步到运营后台"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "历史胜率"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "每日新加坡时间 06:00 按房间当日统一日化收益率结算，收益扣除绩效费后进入客户可用余额。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "请勾选并同意实体众筹投资协议"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "请先登录后再开启跟单"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "请先同意跟单协议与免责条款"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "请先阅读并勾选同意线上协议"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "全部标为已读"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "确认开启跟单 ($"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "确认认购参与 ($"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "认购失败"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "实名"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "实体认购 •"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "收益分配："
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "输入您的问题..."
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "提现规则："
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "通知中心"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "投资金额 (USD)"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "退出路径 / 周期:"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "我已确认，开启跟单 ($"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "我已审阅该项目的尽调报告与法律协议，自愿参与认购。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "我已阅读并同意上述《风险告知书》与《7天跟单锁定规则》等线上协议。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "我已知晓跟单交易的风险，同意自动跟随该交易员的开平仓操作。"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "以当前账户可用余额为准"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "盈透copy 官方客服支持"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "预估年化收益率:"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "预期年度收益分红:"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "暂无通知"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "暂无消息，发送第一条咨询吧"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "正在加载通知..."
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "自开启跟单之日起"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "最大止损保护比例"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "最低起投: $"
+  },
+  {
+    "category": "Modals.tsx",
+    "file": "Modals.tsx",
+    "source": "最低起投金额为"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "· 本金"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "」当前亏损已达您设置的止损线（"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "%），当前剩余本金 $"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "📅 日化收益记录"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "操作失败"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "当前活跃跟单 (Active Copy-Trades)"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "当前盈亏"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "当日收益已按日化收益率自动结算至您的账户余额。"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "发现更多优质交易员 (Discover Top Traders)"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "个策略"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "跟单触发止损"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "跟单待结算分润 (Commission Balance)"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "跟单总概览 (Performance Summary)"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "继续跟单"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "结束跟单"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "结束跟单：剩余本金将退回可用余额并停止每日分红；继续跟单：则继续按日化收益率分红。"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "结束跟单失败"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "结算当前分润 (Settle Outstanding)"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "今日 +$"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "累计跟单本金"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "每日 06:00 结算"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "每日 06:00 自动结算日化收益"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "平均年化"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "日化"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "天"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "我的跟单资产"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "已分配本金"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "已暂停"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "运行中"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "暂无跟单，去跟单中心开启一个策略吧"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "综合胜率"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "最大回撤"
+  },
+  {
+    "category": "MyCopyTrading",
+    "file": "MyCopyTradingView.tsx",
+    "source": "最低7天锁定中，剩余"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "被邀请好友参与跟单后自动解冻至可用余额"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "编辑资料"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "财务记录"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "查看我的佣金"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "充值与提现明细"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "冻结钱包（邀请奖励待解冻）"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "风险与安全"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "跟单记录与积分兑换"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "可用于投资"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "可用资金"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "累计收益"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "历史总收益"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "去邀请好友 →"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "体验会员"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "团队与佣金"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "退出登录 / 切换账号"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "未完成实名认证"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "我的投资组合"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "邀请好友，可享高达30%的好友交易手续费返佣。"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "邀请赚收益"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "已认证投资人"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "盈透copy"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "账户安全保护设置"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "总资产"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "PRO 会员"
+  },
+  {
+    "category": "Profile",
+    "file": "ProfileView.tsx",
+    "source": "V1-V5 代理数据与团队规模"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "2FA 未启用"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "2FA 已启用"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "安全与双重验证"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "保存成功"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "保存更改"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "保存失败"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "点击相机上传真实头像"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "复制"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "个人资料"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "审核中"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "实名认证"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "手机号"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "头像上传失败"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "头像已更新"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "未绑定"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "未认证"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "已复制"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "已认证"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "用户昵称"
+  },
+  {
+    "category": "ProfileEdit",
+    "file": "ProfileEditView.tsx",
+    "source": "邮箱"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "《风险揭示书》"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "《风险揭示书》：投资有风险，入市需谨慎。"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "《用户服务协议》"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "《用户服务协议》已更新至最新合规版本。"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "创建新账号"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "开启您的智能量化与积分商城之旅"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "可享专属手续费折扣"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "两次输入的密码不一致"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "请输入您的手机号或邮箱"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "请先勾选并同意服务协议与风险揭示书"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "确认登录密码"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "设置登录密码"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "手机号 / 电子邮箱"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "我已阅读并同意"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "邀请码"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "邀请码 (选填)"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "已有账号？"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "与"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "再次输入登录密码"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "正在创建加密投资账户..."
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "直接登录"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "至少8位字符，包含字母与数字"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "注册并开始投资"
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "注册成功！您的UID："
+  },
+  {
+    "category": "Register",
+    "file": "RegisterView.tsx",
+    "source": "注册失败，请稍后重试"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "单日最大亏损"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "单日最高盈利"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "房间不存在或已下架"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "房间链接已复制到剪贴板！"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "房间详情"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "风险评级"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "核心指标"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "绩效费"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "交易分析"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "交易品种占比"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "亏损笔数:"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "累计收益率"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "立即跟单"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "平均交易手数"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "平均利润"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "平均日收益"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "平均损失"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "日化收益率"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "胜率"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "收益趋势"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "桃花岛"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "盈利笔数:"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "月回报率"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "正在加载房间数据..."
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "总利润"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "最大回撤"
+  },
+  {
+    "category": "RoomDetail",
+    "file": "RoomDetailView.tsx",
+    "source": "最大盈利"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "2FA 初始化失败"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "安全状态"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "保存新密码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "操作失败"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "当前设备"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "登录密码已修改，其他设备已下线"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "登录设备"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "冻结后暂停跟单、充值和提现操作，需登录密码确认。"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "风险与安全"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "谷歌验证器 2FA"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "关闭"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "关闭失败"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "活跃登录设备"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "解除紧急冻结"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "紧急冻结"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "两次新密码不一致"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "密码修改失败"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "启用"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "请输入登录密码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "请输入登录密码确认操作"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "请输入谷歌验证器动态验证码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "确认启用"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "确认新密码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "尚未启用双重验证"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "使用 Google Authenticator 扫描二维码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "输入 6 位动态验证码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "双重验证已关闭"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "双重验证已启用"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "台设备"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "未绑定"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "下线"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "新密码（至少8位）"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "修改登录密码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "验证码错误"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "已绑定"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "原密码"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "暂无会话"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "账户冻结已解除"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "账户已冻结"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "账户已紧急冻结"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "账户正常"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "执行紧急冻结"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "最近登录"
+  },
+  {
+    "category": "Security",
+    "file": "SecurityView.tsx",
+    "source": "IP 未记录"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "安全节点加密签名中..."
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "到账金额:"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "可用余额"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "目标网络:"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "请输入有效的提现地址"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "全部"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "确认提现"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "实际到账:"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现地址"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现金额超出可用余额"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现申请已提交"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现数量"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现数量:"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "提现网络"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "完成并返回"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "网络确认通常在 5-15 分钟内完成，可在财务记录中查看进度。"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "网络手续费:"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "限额: 10.00 - 50,000.00 USDT"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "选择资产"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "粘贴"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "长按粘贴或输入提现钱包地址"
+  },
+  {
+    "category": "Withdraw",
+    "file": "WithdrawView.tsx",
+    "source": "最小提现金额为 10.00 USDT"
+  }
+]

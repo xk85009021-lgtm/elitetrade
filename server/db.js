@@ -791,6 +791,12 @@ function seedContent() {
     ['deposit_notice','请使用平台指定地址充值，审核通过后入账。','text'],
     ['withdraw_notice','提现申请将在审核通过后扣款。','text'],
     ['customer_service','联系在线客服获取帮助','text'],
+    ['ui_text_zh_cn','{}','json'],
+    ['ui_text_en','{}','json'],
+    ['ui_text_zh_tw','{}','json'],
+    ['site_params_json',JSON.stringify({minDeposit:10,minWithdraw:10,minFollowDays:7,dailySettleHour:6,pointsBaseAmount:500,pointsPerBase:10,defaultLanguage:'zh-CN',contactEmail:'',contactTelegram:'',contactWhatsapp:''}),'json'],
+    ['feature_flags_json',JSON.stringify({showCrowdfunding:false,showMall:true,showLeadTrader:true,showInvite:true,showQuotes:true,showCheckin:true}),'json'],
+    ['static_team_json','[]','json'],
   ];
   items.forEach(i => ins.run(...i));
 }
