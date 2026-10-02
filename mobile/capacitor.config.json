@@ -1,12 +1,14 @@
 {
   "appId": "com.yingtocopy.app",
   "appName": "盈透copy",
-  "webDir": "dist",
+  "webDir": "../frontend-dist",
   "server": {
     "url": "https://your-domain.com",
     "androidScheme": "https",
     "cleartext": false,
-    "allowNavigation": ["your-domain.com"]
+    "allowNavigation": [
+      "your-domain.com"
+    ]
   },
   "plugins": {
     "SplashScreen": {
