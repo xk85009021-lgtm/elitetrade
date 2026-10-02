@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+const file = new URL('./capacitor.config.json', import.meta.url);
+const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+const appUrl = process.env.APP_URL || 'https://elitetrade.onrender.com';
+const parsed = new URL(appUrl);
+config.server = config.server || {};
+config.server.url = appUrl;
+config.server.androidScheme = 'https';
+config.server.cleartext = false;
+config.server.allowNavigation = [parsed.hostname];
+fs.writeFileSync(file, JSON.stringify(config, null, 2));
+console.log('Capacitor server.url =', appUrl);
