@@ -1,0 +1,13 @@
+{
+  "name": "盈透copy",
+  "short_name": "盈透copy",
+  "description": "智能量化跟单、积分商城与全球行情平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#004ac6",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

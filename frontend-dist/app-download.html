@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>盈透copy APP 下载</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800;900&display=swap" />
+<style>
+*{box-sizing:border-box}body{margin:0;background:#071b45;color:#fff;font-family:Hanken Grotesk,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px}.card{width:100%;max-width:900px;background:linear-gradient(145deg,#071b45,#004ac6 55%,#0e7490);border:1px solid rgba(255,255,255,.18);border-radius:32px;padding:44px;box-shadow:0 32px 90px rgba(0,0,0,.4);position:relative;overflow:hidden}.glow{position:absolute;border-radius:50%;filter:blur(4px);opacity:.18;background:#67e8f9}.g1{width:280px;height:280px;right:-80px;top:-100px}.g2{width:260px;height:260px;left:-110px;bottom:-130px}.content{position:relative;display:grid;grid-template-columns:1.3fr .7fr;gap:42px;align-items:center}.brand{display:flex;align-items:center;gap:14px;font-size:22px;font-weight:900}.logo{width:58px;height:58px;border-radius:17px;background:#fff;padding:8px}.badge{display:inline-flex;margin-top:30px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:700;color:#dbeafe}.title{font-size:46px;line-height:1.05;font-weight:900;letter-spacing:-1.5px;margin:18px 0 12px}.sub{font-size:14px;line-height:1.8;color:#dbeafe;max-width:520px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:26px 0}.feature{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;font-size:11px;line-height:1.5}.buttons{display:flex;gap:12px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;min-width:170px;padding:14px 20px;border-radius:14px;text-decoration:none;font-size:13px;font-weight:800;background:#fff;color:#004ac6;border:none}.btn.secondary{background:rgba(255,255,255,.13);color:#fff;border:1px solid rgba(255,255,255,.2)}.btn.disabled{opacity:.45;pointer-events:none}.status{font-size:11px;color:#bae6fd;margin-top:11px}.qr{background:#fff;border-radius:26px;padding:18px;text-align:center;color:#0f172a}.qr img{width:100%;max-width:240px;display:block;margin:0 auto}.qr h3{font-size:14px;margin:12px 0 4px}.qr p{font-size:11px;color:#64748b;margin:0;line-height:1.5}@media(max-width:760px){.card{padding:26px}.content{grid-template-columns:1fr}.title{font-size:34px}.features{grid-template-columns:1fr}.qr{max-width:280px;margin:0 auto}}
+</style>
+</head>
+<body>
+<div class="page"><div class="card"><div class="glow g1"></div><div class="glow g2"></div><div class="content">
+  <div>
+    <div class="brand"><img class="logo" src="/app-icon.svg" alt="盈透copy" /><span id="appName">盈透copy</span></div>
+    <div class="badge">官方 APP · 安全下载</div>
+    <h1 class="title">随时掌握<br/>跟单与收益</h1>
+    <p class="sub">跟单量化、实时行情、推广团队、积分商城和账户管理，一个 APP 全部完成。</p>
+    <div class="features"><div class="feature">实时行情<br/>10 秒刷新</div><div class="feature">跟单收益<br/>每日结算</div><div class="feature">团队数据<br/>实时同步</div></div>
+    <div class="buttons">
+      <a class="btn" id="androidBtn" href="/downloads/yingto-copy.apk" download>Android 下载</a>
+      <a class="btn secondary disabled" id="iosBtn" href="#">iOS 即将上线</a>
+    </div>
+    <div class="status" id="status">正在检查安装包...</div>
+  </div>
+  <div class="qr"><img id="downloadQr" src="/api/public/qrcode" alt="下载二维码" /><h3>扫码下载</h3><p>使用手机扫描二维码<br/>打开官方下载页面</p></div>
+</div></div></div>
+<script>
+(async()=>{document.getElementById('downloadQr').src='/api/public/qrcode?text='+encodeURIComponent(location.origin+'/download');try{const c=await (await fetch('/api/public/content')).json();if(c.app_name)document.getElementById('appName').textContent=c.app_name}catch(e){}
+for(const [id,path] of [['androidBtn','/downloads/yingto-copy.apk'],['iosBtn','/downloads/yingto-copy.ipa']]){try{const r=await fetch(path,{method:'HEAD'});if(r.ok){document.getElementById(id).classList.remove('disabled');if(id==='iosBtn'){document.getElementById(id).textContent='iOS 下载';document.getElementById(id).href=path;document.getElementById(id).setAttribute('download','')}}}catch(e){}}
+const android=document.getElementById('androidBtn');document.getElementById('status').textContent=android.classList.contains('disabled')?'安装包制作完成后将自动开放下载':'官方安装包已就绪';})();
+</script>
+</body>
+</html>
